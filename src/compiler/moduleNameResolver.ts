@@ -306,7 +306,9 @@ namespace ts {
         const nmTypes = getNodeModulesTypeRoots(currentDirectory, host);
         const pnpTypes = getPnpTypeRoots(currentDirectory);
 
-        return [...nmTypes, ...pnpTypes];
+        if (nmTypes.length > 0 || pnpTypes.length > 0) {
+            return [...nmTypes, ...pnpTypes];
+        }
     }
 
     /**
