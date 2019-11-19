@@ -404,7 +404,10 @@ namespace ts {
                 }
                 let result: Resolved | undefined;
                 if (!isExternalModuleNameRelative(typeReferenceDirectiveName)) {
-                    const searchResult = loadModuleFromNearestNodeModulesDirectory(Extensions.DtsOnly, typeReferenceDirectiveName, initialLocationForSecondaryLookup, moduleResolutionState, /*cache*/ undefined, /*redirectedReference*/ undefined);
+                    const searchResult = isPnpAvailable()
+                        ? tryLoadModuleUsingPnpResolution(Extensions.DtsOnly, typeReferenceDirectiveName, initialLocationForSecondaryLookup, moduleResolutionState)
+                        : loadModuleFromNearestNodeModulesDirectory(Extensions.DtsOnly, typeReferenceDirectiveName, initialLocationForSecondaryLookup, moduleResolutionState, /*cache*/ undefined, /*redirectedReference*/ undefined);
+
                     result = searchResult && searchResult.value;
                 }
                 else {
@@ -1579,20 +1582,22 @@ namespace ts {
         return require("pnpapi");
     }
 
-    function loadPnpPackageResolution(packageName: string, issuer: string) {
-        return getPnpApi().resolveToUnqualified(packageName, issuer, { considerBuiltins: false });
+    function loadPnpPackageResolution(packageName: string, containingDirectory: string) {
+        try {
+            return getPnpApi().resolveToUnqualified(packageName, `${containingDirectory}/`, { considerBuiltins: false });
+        } catch {}
     }
 
-    function loadPnpTypePackageResolution(packageName: string, issuer: string) {
-        return loadPnpPackageResolution(getTypesPackageName(packageName), issuer);
+    function loadPnpTypePackageResolution(packageName: string, containingDirectory: string) {
+        return loadPnpPackageResolution(getTypesPackageName(packageName), containingDirectory);
     }
 
     /* @internal */
-    export function tryLoadModuleUsingPnpResolution(extensions: Extensions, moduleName: string, issuer: string, state: ModuleResolutionState) {
+    export function tryLoadModuleUsingPnpResolution(extensions: Extensions, moduleName: string, containingDirectory: string, state: ModuleResolutionState) {
         const {packageName, rest} = parsePackageName(moduleName);
 
-        const packageResolution = loadPnpPackageResolution(packageName, issuer);
-        const packageFullResolution = packageResolution !== null
+        const packageResolution = loadPnpPackageResolution(packageName, containingDirectory);
+        const packageFullResolution = packageResolution
             ? nodeLoadModuleByRelativeName(extensions, combinePaths(packageResolution, rest), /*onlyRecordFailures*/ false, state, /*considerPackageJson*/ true)
             : undefined;
 
@@ -1600,8 +1605,8 @@ namespace ts {
         if (packageFullResolution) {
             resolved = packageFullResolution;
         } else if (extensions === Extensions.TypeScript || extensions === Extensions.DtsOnly) {
-            const typePackageResolution = loadPnpTypePackageResolution(packageName, issuer);
-            const typePackageFullResolution = typePackageResolution !== null
+            const typePackageResolution = loadPnpTypePackageResolution(packageName, containingDirectory);
+            const typePackageFullResolution = typePackageResolution
                 ? nodeLoadModuleByRelativeName(Extensions.DtsOnly, combinePaths(typePackageResolution, rest), /*onlyRecordFailures*/ false, state, /*considerPackageJson*/ true)
                 : undefined;
 
