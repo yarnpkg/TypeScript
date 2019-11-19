@@ -676,6 +676,8 @@ namespace ts.server {
 
         private performanceEventHandler?: PerformanceEventHandler;
 
+        private pnpWatcher?: FileWatcher;
+
         constructor(opts: ProjectServiceOptions) {
             this.host = opts.host;
             this.logger = opts.logger;
@@ -733,6 +735,8 @@ namespace ts.server {
                     watchDirectory: returnNoopFileWatcher,
                 } :
                 getWatchFactory(watchLogLevel, log, getDetailWatchInfo);
+
+            this.pnpWatcher = this.watchPnpFile();
         }
 
         toPath(fileName: string) {
@@ -2719,6 +2723,9 @@ namespace ts.server {
                 if (args.watchOptions) {
                     this.hostConfiguration.watchOptions = convertWatchOptions(args.watchOptions);
                     this.logger.info(`Host watch options changed to ${JSON.stringify(this.hostConfiguration.watchOptions)}, it will be take effect for next watches.`);
+
+                    this.pnpWatcher?.close();
+                    this.watchPnpFile();
                 }
             }
         }
@@ -3729,6 +3736,32 @@ namespace ts.server {
             });
 
             return result;
+        }
+
+        /*@internal*/
+        private watchPnpFile() {
+            // @ts-ignore
+            if (!process.versions.pnp) {
+                return;
+            }
+            const pnpFileName = require.resolve(`pnpapi`);
+            return this.watchFactory.watchFile(
+                this.host,
+                pnpFileName,
+                () => {
+                    this.forEachProject(project => {
+                        for (const info of project.getScriptInfos()) {
+                            project.resolutionCache.invalidateResolutionOfFile(info.path);
+                        }
+                        project.markAsDirty();
+                        updateProjectIfDirty(project);
+                    });
+                    this.delayEnsureProjectForOpenFiles();
+                },
+                PollingInterval.Low,
+                this.hostConfiguration.watchOptions,
+                WatchType.ConfigFile,
+            );
         }
 
         /*@internal*/

@@ -314,7 +314,36 @@ namespace ts.moduleSpecifiers {
         if (!host.fileExists || !host.readFile) {
             return undefined;
         }
-        const parts: NodeModulePathParts = getNodeModulePathParts(moduleFileName)!;
+
+        let parts: NodeModulePathParts | PackagePathParts | undefined
+            = getNodeModulePathParts(moduleFileName);
+
+        let packageName: string | undefined;
+        // @ts-ignore
+        if (!parts && typeof process.versions.pnp !== `undefined`) {
+            // @ts-ignore
+            const pnpApi = require(`pnpapi`);
+            const locator = pnpApi.findPackageLocator(moduleFileName);
+            // eslint-disable-next-line no-null/no-null
+            if (locator !== null) {
+                const sourceLocator = pnpApi.findPackageLocator(`${sourceDirectory}/`);
+                // Don't use the package name when the imported file is inside
+                // the source directory (prefer a relative path instead)
+                if (locator === sourceLocator) {
+                    return undefined;
+                }
+                const information = pnpApi.getPackageInformation(locator);
+                packageName = locator.name;
+                parts = {
+                    topLevelNodeModulesIndex: undefined,
+                    topLevelPackageNameIndex: undefined,
+                    // The last character from packageLocation is the trailing "/", we want to point to it
+                    packageRootIndex: information.packageLocation.length - 1,
+                    fileNameIndex: moduleFileName.lastIndexOf(`/`),
+                };
+            }
+        }
+
         if (!parts) {
             return undefined;
         }
@@ -343,19 +372,27 @@ namespace ts.moduleSpecifiers {
             }
         }
 
-        const globalTypingsCacheLocation = host.getGlobalTypingsCacheLocation && host.getGlobalTypingsCacheLocation();
-        // Get a path that's relative to node_modules or the importing file's path
-        // if node_modules folder is in this folder or any of its parent folders, no need to keep it.
-        const pathToTopLevelNodeModules = getCanonicalFileName(moduleSpecifier.substring(0, parts.topLevelNodeModulesIndex));
-        if (!(startsWith(sourceDirectory, pathToTopLevelNodeModules) || globalTypingsCacheLocation && startsWith(getCanonicalFileName(globalTypingsCacheLocation), pathToTopLevelNodeModules))) {
-            return undefined;
+        // If PnP is enabled the node_modules entries we'll get will always be relevant even if they
+        // are located in a weird path apparently outside of the source directory
+        // @ts-ignore
+        if (typeof process.versions.pnp === `undefined`) {
+            const globalTypingsCacheLocation = host.getGlobalTypingsCacheLocation && host.getGlobalTypingsCacheLocation();
+            // Get a path that's relative to node_modules or the importing file's path
+            // if node_modules folder is in this folder or any of its parent folders, no need to keep it.
+            const pathToTopLevelNodeModules = getCanonicalFileName(moduleSpecifier.substring(0, parts.topLevelNodeModulesIndex));
+                if (!(startsWith(sourceDirectory, pathToTopLevelNodeModules) || globalTypingsCacheLocation && startsWith(getCanonicalFileName(globalTypingsCacheLocation), pathToTopLevelNodeModules))) {
+                return undefined;
+            }
         }
 
         // If the module was found in @types, get the actual Node package name
-        const nodeModulesDirectoryName = moduleSpecifier.substring(parts.topLevelPackageNameIndex + 1);
-        const packageName = getPackageNameFromTypesPackageName(nodeModulesDirectoryName);
+        const nodeModulesDirectoryName = typeof packageName !== `undefined`
+            ? packageName + moduleSpecifier.substring(parts.packageRootIndex)
+            : moduleSpecifier.substring(parts.topLevelPackageNameIndex! + 1);
+
+        const packageNameFromPath = getPackageNameFromTypesPackageName(nodeModulesDirectoryName);
         // For classic resolution, only allow importing from node_modules/@types, not other node_modules
-        return getEmitModuleResolutionKind(options) !== ModuleResolutionKind.NodeJs && packageName === nodeModulesDirectoryName ? undefined : packageName;
+        return getEmitModuleResolutionKind(options) !== ModuleResolutionKind.NodeJs && packageNameFromPath === nodeModulesDirectoryName ? undefined : packageNameFromPath;
 
         function tryDirectoryWithPackageJson(packageRootIndex: number) {
             const packageRootPath = moduleFileName.substring(0, packageRootIndex);
@@ -396,8 +433,8 @@ namespace ts.moduleSpecifiers {
 
             // If the file is /index, it can be imported by its directory name
             // IFF there is not _also_ a file by the same name
-            if (getCanonicalFileName(fullModulePathWithoutExtension.substring(parts.fileNameIndex)) === "/index" && !tryGetAnyFileFromPath(host, fullModulePathWithoutExtension.substring(0, parts.fileNameIndex))) {
-                return fullModulePathWithoutExtension.substring(0, parts.fileNameIndex);
+            if (getCanonicalFileName(fullModulePathWithoutExtension.substring(parts!.fileNameIndex)) === "/index" && !tryGetAnyFileFromPath(host, fullModulePathWithoutExtension.substring(0, parts!.fileNameIndex))) {
+                return fullModulePathWithoutExtension.substring(0, parts!.fileNameIndex);
             }
 
             return fullModulePathWithoutExtension;
@@ -422,6 +459,14 @@ namespace ts.moduleSpecifiers {
         readonly packageRootIndex: number;
         readonly fileNameIndex: number;
     }
+
+    interface PackagePathParts {
+        readonly topLevelNodeModulesIndex: undefined;
+        readonly topLevelPackageNameIndex: undefined;
+        readonly packageRootIndex: number;
+        readonly fileNameIndex: number;
+    }
+
     function getNodeModulePathParts(fullPath: string): NodeModulePathParts | undefined {
         // If fullPath can't be valid module file within node_modules, returns undefined.
         // Example of expected pattern: /base/path/node_modules/[@scope/otherpackage/@otherscope/node_modules/]package/[subdirectory/]file.js
