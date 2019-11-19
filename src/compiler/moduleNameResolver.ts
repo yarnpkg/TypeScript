@@ -259,25 +259,55 @@ namespace ts {
 
     /**
      * Returns the path to every node_modules/@types directory from some ancestor directory.
-     * Returns undefined if there are none.
      */
-    function getDefaultTypeRoots(currentDirectory: string, host: { directoryExists?: (directoryName: string) => boolean }): string[] | undefined {
+    function getNodeModulesTypeRoots(currentDirectory: string, host: { directoryExists?: (directoryName: string) => boolean }) {
         if (!host.directoryExists) {
             return [combinePaths(currentDirectory, nodeModulesAtTypes)];
             // And if it doesn't exist, tough.
         }
 
-        let typeRoots: string[] | undefined;
+        const typeRoots: string[] = [];
         forEachAncestorDirectory(normalizePath(currentDirectory), directory => {
             const atTypes = combinePaths(directory, nodeModulesAtTypes);
             if (host.directoryExists!(atTypes)) {
-                (typeRoots || (typeRoots = [])).push(atTypes);
+                typeRoots.push(atTypes);
             }
             return undefined;
         });
+
         return typeRoots;
     }
     const nodeModulesAtTypes = combinePaths("node_modules", "@types");
+
+    function getPnpTypeRoots(currentDirectory: string) {
+        if (!isPnpAvailable()) {
+            return [];
+        }
+
+        const pnpapi = getPnpApi();
+        const locator = pnpapi.findPackageLocator(`${currentDirectory}/`);
+        const {packageDependencies} = pnpapi.getPackageInformation(locator);
+
+        const typeRoots: string[] = [];
+        for (const [name, referencish] of Array.from<any>(packageDependencies.entries())) {
+          if (name.startsWith(typesPackagePrefix) && referencish !== null) {
+            const dependencyLocator = pnpapi.getLocator(name, referencish);
+            const {packageLocation} = pnpapi.getPackageInformation(dependencyLocator);
+
+            typeRoots.push(getDirectoryPath(packageLocation));
+          }
+        }
+
+        return typeRoots;
+    }
+    const typesPackagePrefix = "@types/";
+
+    function getDefaultTypeRoots(currentDirectory: string, host: { directoryExists?: (directoryName: string) => boolean }): string[] | undefined {
+        const nmTypes = getNodeModulesTypeRoots(currentDirectory, host);
+        const pnpTypes = getPnpTypeRoots(currentDirectory);
+
+        return [...nmTypes, ...pnpTypes];
+    }
 
     /**
      * @param {string | undefined} containingFile - file that contains type reference directive, can be undefined if containing file is unknown.
@@ -951,8 +981,14 @@ namespace ts {
                 if (traceEnabled) {
                     trace(host, Diagnostics.Loading_module_0_from_node_modules_folder_target_file_type_1, moduleName, Extensions[extensions]);
                 }
-                const resolved = loadModuleFromNearestNodeModulesDirectory(extensions, moduleName, containingDirectory, state, cache, redirectedReference);
-                if (!resolved) return undefined;
+
+                const resolved = isPnpAvailable()
+                    ? tryLoadModuleUsingPnpResolution(extensions, moduleName, containingDirectory, state)
+                    : loadModuleFromNearestNodeModulesDirectory(extensions, moduleName, containingDirectory, state, cache, redirectedReference);
+
+                if (!resolved) {
+                    return undefined;
+                }
 
                 let resolvedValue = resolved.value;
                 if (!compilerOptions.preserveSymlinks && resolvedValue && !resolvedValue.originalPath) {
@@ -1523,5 +1559,59 @@ namespace ts {
      */
     function toSearchResult<T>(value: T | undefined): SearchResult<T> {
         return value !== undefined ? { value } : undefined;
+    }
+
+    /**
+     * We only allow PnP to be used as a resolution strategy if TypeScript
+     * itself is executed under a PnP runtime (and we only allow it to access
+     * the current PnP runtime, not any on the disk). This ensures that we
+     * don't execute potentially malicious code that didn't already have a
+     * chance to be executed (if we're running within the runtime, it means
+     * that the runtime has already been executed).
+     * @internal
+     */
+    export function isPnpAvailable() {
+        // @ts-ignore
+        return process.versions.pnp;
+    }
+
+    function getPnpApi() {
+        return require("pnpapi");
+    }
+
+    function loadPnpPackageResolution(packageName: string, issuer: string) {
+        return getPnpApi().resolveToUnqualified(packageName, issuer, { considerBuiltins: false });
+    }
+
+    function loadPnpTypePackageResolution(packageName: string, issuer: string) {
+        return loadPnpPackageResolution(getTypesPackageName(packageName), issuer);
+    }
+
+    /* @internal */
+    export function tryLoadModuleUsingPnpResolution(extensions: Extensions, moduleName: string, issuer: string, state: ModuleResolutionState) {
+        const {packageName, rest} = parsePackageName(moduleName);
+
+        const packageResolution = loadPnpPackageResolution(packageName, issuer);
+        const packageFullResolution = packageResolution !== null
+            ? nodeLoadModuleByRelativeName(extensions, combinePaths(packageResolution, rest), /*onlyRecordFailures*/ false, state, /*considerPackageJson*/ true)
+            : undefined;
+
+        let resolved;
+        if (packageFullResolution) {
+            resolved = packageFullResolution;
+        } else if (extensions === Extensions.TypeScript || extensions === Extensions.DtsOnly) {
+            const typePackageResolution = loadPnpTypePackageResolution(packageName, issuer);
+            const typePackageFullResolution = typePackageResolution !== null
+                ? nodeLoadModuleByRelativeName(Extensions.DtsOnly, combinePaths(typePackageResolution, rest), /*onlyRecordFailures*/ false, state, /*considerPackageJson*/ true)
+                : undefined;
+
+            if (typePackageFullResolution) {
+                resolved = typePackageFullResolution;
+            }
+        }
+
+        if (resolved) {
+            return toSearchResult(resolved);
+        }
     }
 }
