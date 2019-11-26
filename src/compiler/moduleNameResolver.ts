@@ -290,12 +290,13 @@ namespace ts {
 
         const typeRoots: string[] = [];
         for (const [name, referencish] of Array.from<any>(packageDependencies.entries())) {
-          if (name.startsWith(typesPackagePrefix) && referencish !== null) {
-            const dependencyLocator = pnpapi.getLocator(name, referencish);
-            const {packageLocation} = pnpapi.getPackageInformation(dependencyLocator);
+            // eslint-disable-next-line no-null/no-null
+            if (name.startsWith(typesPackagePrefix) && referencish !== null) {
+                const dependencyLocator = pnpapi.getLocator(name, referencish);
+                const {packageLocation} = pnpapi.getPackageInformation(dependencyLocator);
 
-            typeRoots.push(getDirectoryPath(packageLocation));
-          }
+                typeRoots.push(getDirectoryPath(packageLocation));
+            }
         }
 
         return typeRoots;
@@ -1575,7 +1576,7 @@ namespace ts {
      * that the runtime has already been executed).
      * @internal
      */
-    export function isPnpAvailable() {
+    function isPnpAvailable() {
         // @ts-ignore
         return process.versions.pnp;
     }
@@ -1587,7 +1588,10 @@ namespace ts {
     function loadPnpPackageResolution(packageName: string, containingDirectory: string) {
         try {
             return getPnpApi().resolveToUnqualified(packageName, `${containingDirectory}/`, { considerBuiltins: false });
-        } catch {}
+        }
+        catch {
+            // Nothing to do
+        }
     }
 
     function loadPnpTypePackageResolution(packageName: string, containingDirectory: string) {
@@ -1595,7 +1599,7 @@ namespace ts {
     }
 
     /* @internal */
-    export function tryLoadModuleUsingPnpResolution(extensions: Extensions, moduleName: string, containingDirectory: string, state: ModuleResolutionState) {
+    function tryLoadModuleUsingPnpResolution(extensions: Extensions, moduleName: string, containingDirectory: string, state: ModuleResolutionState) {
         const {packageName, rest} = parsePackageName(moduleName);
 
         const packageResolution = loadPnpPackageResolution(packageName, containingDirectory);
@@ -1606,7 +1610,8 @@ namespace ts {
         let resolved;
         if (packageFullResolution) {
             resolved = packageFullResolution;
-        } else if (extensions === Extensions.TypeScript || extensions === Extensions.DtsOnly) {
+        }
+        else if (extensions === Extensions.TypeScript || extensions === Extensions.DtsOnly) {
             const typePackageResolution = loadPnpTypePackageResolution(packageName, containingDirectory);
             const typePackageFullResolution = typePackageResolution
                 ? nodeLoadModuleByRelativeName(Extensions.DtsOnly, combinePaths(typePackageResolution, rest), /*onlyRecordFailures*/ false, state, /*considerPackageJson*/ true)
