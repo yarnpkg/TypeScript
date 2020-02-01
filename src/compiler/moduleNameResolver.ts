@@ -285,7 +285,7 @@ namespace ts {
         }
 
         // Some TS consumers pass relative paths that aren't normalized
-        currentDirectory = ts.sys.resolvePath(currentDirectory);
+        currentDirectory = sys.resolvePath(currentDirectory);
 
         const pnpapi = getPnpApi();
         const locator = pnpapi.findPackageLocator(`${currentDirectory}/`);
