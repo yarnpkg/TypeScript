@@ -284,6 +284,9 @@ namespace ts {
             return [];
         }
 
+        // Some TS consumers pass relative paths that aren't normalized
+        currentDirectory = ts.sys.resolvePath(currentDirectory);
+
         const pnpapi = getPnpApi();
         const locator = pnpapi.findPackageLocator(`${currentDirectory}/`);
         const {packageDependencies} = pnpapi.getPackageInformation(locator);
