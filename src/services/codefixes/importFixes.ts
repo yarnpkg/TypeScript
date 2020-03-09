@@ -707,6 +707,7 @@ namespace ts.codefix {
         const fromLocator = pnpApi.findPackageLocator(fromPath);
         const toLocator = pnpApi.findPackageLocator(toPath);
 
+        // eslint-disable-next-line no-null/no-null
         if (toLocator === null) {
             return false;
         }
@@ -720,7 +721,8 @@ namespace ts.codefix {
     function isImportablePath(fromPath: string, toPath: string, getCanonicalFileName: GetCanonicalFileName, globalCachePath?: string): boolean {
         if (isPnpAvailable()) {
             return isImportablePathPnp(fromPath, toPath);
-        } else {
+        }
+        else {
             return isImportablePathNode(fromPath, toPath, getCanonicalFileName, globalCachePath);
         }
     }
