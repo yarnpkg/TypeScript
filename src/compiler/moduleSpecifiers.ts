@@ -281,6 +281,11 @@ namespace ts.moduleSpecifiers {
             : removeFileExtension(relativePath);
     }
 
+    function isPnpAvailable() {
+        // @ts-ignore
+        return process.versions.pnp;
+    }
+
     function tryGetModuleNameAsNodeModule(moduleFileName: string, { getCanonicalFileName, sourceDirectory }: Info, host: ModuleSpecifierResolutionHost, options: CompilerOptions, packageNameOnly?: boolean): string | undefined {
         if (!host.fileExists || !host.readFile) {
             return undefined;
@@ -323,7 +328,7 @@ namespace ts.moduleSpecifiers {
         const pathToTopLevelNodeModules = getCanonicalFileName(moduleSpecifier.substring(0, parts.topLevelNodeModulesIndex));
         // If PnP is enabled the node_modules entries we'll get will always be relevant even if they
         // are located in a weird path apparently outside of the source directory
-        if (!process.versions.pnp && !(startsWith(sourceDirectory, pathToTopLevelNodeModules) || globalTypingsCacheLocation && startsWith(getCanonicalFileName(globalTypingsCacheLocation), pathToTopLevelNodeModules))) {
+        if (!isPnpAvailable() && !(startsWith(sourceDirectory, pathToTopLevelNodeModules) || globalTypingsCacheLocation && startsWith(getCanonicalFileName(globalTypingsCacheLocation), pathToTopLevelNodeModules))) {
             return undefined;
         }
 
