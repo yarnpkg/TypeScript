@@ -290,9 +290,9 @@ namespace ts {
         const pnpapi = getPnpApi();
 
         const currentPackage = pnpapi.findPackageLocator(`${currentDirectory}/`);
-        Debug.assert(currentPackage);
+        Debug.assert(!!currentPackage);
 
-        const {packageDependencies} = pnpapi.getPackageInformation(currentPackage);
+        const {packageDependencies} = pnpapi.getPackageInformation(currentPackage!);
 
         const typeRoots: string[] = [];
         for (const [name, referencish] of Array.from<any>(packageDependencies.entries())) {
@@ -1647,12 +1647,12 @@ namespace ts {
         const pnpApi = getPnpApi();
 
         const ownerPackage = pnpApi.findPackageLocator(resolvedValue.path);
-        Debug.assert(ownerPackage);
+        Debug.assert(!!ownerPackage);
 
         const rootLocators = pnpApi.getDependencyTreeRoots();
 
         return rootLocators.some(root => {
-            return root.name === ownerPackage.name && root.reference === ownerPackage.reference;
+            return root.name === ownerPackage!.name && root.reference === ownerPackage!.reference;
         });
     }
 }
