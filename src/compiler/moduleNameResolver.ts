@@ -1651,7 +1651,8 @@ namespace ts {
 
         const rootLocators = pnpApi.getDependencyTreeRoots();
 
-        return rootLocators.some(root => {
+        // External if none of the root locators owns the file
+        return !rootLocators.some(root => {
             return root.name === ownerPackage!.name && root.reference === ownerPackage!.reference;
         });
     }
