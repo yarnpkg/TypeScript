@@ -288,8 +288,11 @@ namespace ts {
         currentDirectory = sys.resolvePath(currentDirectory);
 
         const pnpapi = getPnpApi();
-        const locator = pnpapi.findPackageLocator(`${currentDirectory}/`);
-        const {packageDependencies} = pnpapi.getPackageInformation(locator);
+
+        const currentPackage = pnpapi.findPackageLocator(`${currentDirectory}/`);
+        Debug.assert(currentPackage);
+
+        const {packageDependencies} = pnpapi.getPackageInformation(currentPackage);
 
         const typeRoots: string[] = [];
         for (const [name, referencish] of Array.from<any>(packageDependencies.entries())) {
@@ -1000,13 +1003,19 @@ namespace ts {
                 }
 
                 let resolvedValue = resolved.value;
+
+                const isExternalLibraryImport = resolvedValue && isPnpAvailable()
+                    ? checkPnpExternalLibraryImport(resolvedValue)
+                    : true;
+
+                // For node_modules lookups, get the real path so that multiple accesses to an `npm link`-ed module do not create duplicate files.
                 if (!compilerOptions.preserveSymlinks && resolvedValue && !resolvedValue.originalPath) {
                     const path = realPath(resolvedValue.path, host, traceEnabled);
                     const originalPath = path === resolvedValue.path ? undefined : resolvedValue.path;
                     resolvedValue = { ...resolvedValue, path, originalPath };
                 }
-                // For node_modules lookups, get the real path so that multiple accesses to an `npm link`-ed module do not create duplicate files.
-                return { value: resolvedValue && { resolved: resolvedValue, isExternalLibraryImport: true } };
+
+                return { value: resolvedValue && { resolved: resolvedValue, isExternalLibraryImport } };
             }
             else {
                 const { path: candidate, parts } = normalizePathAndParts(combinePaths(containingDirectory, moduleName));
@@ -1585,7 +1594,13 @@ namespace ts {
     }
 
     function getPnpApi() {
-        return require("pnpapi");
+        return require("pnpapi") as {
+            findPackageLocator: (path: string) => ({name: string, reference: string}) | null,
+            resolveToUnqualified: (request: string, issuer: string, opts: {considerBuiltins: boolean}) => string,
+            getLocator: (name: string, reference: string) => ({name: string, reference: string}),
+            getPackageInformation: (locator: {name: string, reference: string}) => any,
+            getDependencyTreeRoots: () => any[],
+        };
     }
 
     function loadPnpPackageResolution(packageName: string, containingDirectory: string) {
@@ -1625,8 +1640,19 @@ namespace ts {
             }
         }
 
-        if (resolved) {
-            return toSearchResult(resolved);
-        }
+        return toSearchResult(resolved);
+    }
+
+    function checkPnpExternalLibraryImport(resolvedValue: Resolved) {
+        const pnpApi = getPnpApi();
+
+        const ownerPackage = pnpApi.findPackageLocator(resolvedValue.path);
+        Debug.assert(ownerPackage);
+
+        const rootLocators = pnpApi.getDependencyTreeRoots();
+
+        return rootLocators.some(root => {
+            return root.name === ownerPackage.name && root.reference === ownerPackage.reference;
+        });
     }
 }
