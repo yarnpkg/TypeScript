@@ -290,7 +290,9 @@ namespace ts {
         const pnpapi = getPnpApi();
 
         const currentPackage = pnpapi.findPackageLocator(`${currentDirectory}/`);
-        Debug.assert(!!currentPackage);
+        if (!currentPackage) {
+            return [];
+        }
 
         const {packageDependencies} = pnpapi.getPackageInformation(currentPackage!);
 
@@ -1647,13 +1649,15 @@ namespace ts {
         const pnpApi = getPnpApi();
 
         const ownerPackage = pnpApi.findPackageLocator(resolvedValue.path);
-        Debug.assert(!!ownerPackage);
+        if (!ownerPackage) {
+            return true;
+        }
 
         const rootLocators = pnpApi.getDependencyTreeRoots();
 
         // External if none of the root locators owns the file
         return !rootLocators.some(root => {
-            return root.name === ownerPackage!.name && root.reference === ownerPackage!.reference;
+            return root.name === ownerPackage.name && root.reference === ownerPackage.reference;
         });
     }
 }
