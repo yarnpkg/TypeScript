@@ -294,7 +294,7 @@ namespace ts {
             return [];
         }
 
-        const {packageDependencies} = pnpapi.getPackageInformation(currentPackage!);
+        const {packageDependencies} = pnpapi.getPackageInformation(currentPackage);
 
         const typeRoots: string[] = [];
         for (const [name, referencish] of Array.from<any>(packageDependencies.entries())) {
@@ -1596,7 +1596,7 @@ namespace ts {
     function loadPnpPackageResolution(packageName: string, containingDirectory: string) {
         try {
             const resolution = getPnpApi().resolveToUnqualified(packageName, `${containingDirectory}/`, { considerBuiltins: false });
-            return ts.normalizeSlashes(resolution);
+            return normalizeSlashes(resolution);
         }
         catch {
             // Nothing to do
