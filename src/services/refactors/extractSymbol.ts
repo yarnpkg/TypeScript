@@ -66,19 +66,19 @@ namespace ts.refactor.extractSymbol {
 
         const infos: ApplicableRefactorInfo[] = [];
 
-        if (functionActions.length) {
-            infos.push({
-                name: refactorName,
-                description: getLocaleSpecificMessage(Diagnostics.Extract_function),
-                actions: functionActions
-            });
-        }
-
         if (constantActions.length) {
             infos.push({
                 name: refactorName,
                 description: getLocaleSpecificMessage(Diagnostics.Extract_constant),
                 actions: constantActions
+            });
+        }
+
+        if (functionActions.length) {
+            infos.push({
+                name: refactorName,
+                description: getLocaleSpecificMessage(Diagnostics.Extract_function),
+                actions: functionActions
             });
         }
 
@@ -437,6 +437,7 @@ namespace ts.refactor.extractSymbol {
                             permittedJumps = PermittedJumps.Return;
                         }
                         break;
+                    case SyntaxKind.DefaultClause:
                     case SyntaxKind.CaseClause:
                         // allow unlabeled break inside case clauses
                         permittedJumps |= PermittedJumps.Break;
@@ -676,7 +677,7 @@ namespace ts.refactor.extractSymbol {
             case SyntaxKind.FunctionDeclaration:
                 return scope.name
                     ? `function '${scope.name.text}'`
-                    : "anonymous function";
+                    : ANONYMOUS;
             case SyntaxKind.ArrowFunction:
                 return "arrow function";
             case SyntaxKind.MethodDeclaration:
@@ -718,6 +719,8 @@ namespace ts.refactor.extractSymbol {
         context: RefactorContext): RefactorEditInfo {
 
         const checker = context.program.getTypeChecker();
+        const scriptTarget = getEmitScriptTarget(context.program.getCompilerOptions());
+        const importAdder = codefix.createImportAdder(context.file, context.program, context.preferences, context.host);
 
         // Make a unique name for the extracted function
         const file = scope.getSourceFile();
@@ -736,7 +739,7 @@ namespace ts.refactor.extractSymbol {
                 let type = checker.getTypeOfSymbolAtLocation(usage.symbol, usage.node);
                 // Widen the type so we don't emit nonsense annotations like "function fn(x: 3) {"
                 type = checker.getBaseTypeOfLiteralType(type);
-                typeNode = checker.typeToTypeNode(type, scope, NodeBuilderFlags.NoTruncation);
+                typeNode = codefix.typeToAutoImportableTypeNode(checker, importAdder, type, scope, scriptTarget, NodeBuilderFlags.NoTruncation);
             }
 
             const paramDecl = createParameter(
@@ -822,6 +825,7 @@ namespace ts.refactor.extractSymbol {
         else {
             changeTracker.insertNodeAtEndOfScope(context.file, scope, newFunction);
         }
+        importAdder.writeFixes(changeTracker);
 
         const newNodes: Node[] = [];
         // replace range with function call
@@ -1381,7 +1385,7 @@ namespace ts.refactor.extractSymbol {
                 }
 
                 // There must be at least one statement since we started in one.
-                return Debug.assertDefined(prevStatement, "prevStatement failed to get set");
+                return Debug.checkDefined(prevStatement, "prevStatement failed to get set");
             }
 
             Debug.assert(curr !== scope, "Didn't encounter a block-like before encountering scope");
