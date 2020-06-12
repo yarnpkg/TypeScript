@@ -290,7 +290,27 @@ namespace ts.moduleSpecifiers {
         if (!host.fileExists || !host.readFile) {
             return undefined;
         }
-        const parts: NodeModulePathParts = getNodeModulePathParts(moduleFileName)!;
+
+        let parts: NodeModulePathParts | PackagePathParts | undefined
+            = getNodeModulePathParts(moduleFileName);
+
+        let packageName: string | undefined;
+        if (!parts && isPnpAvailable()) {
+            const pnpApi = require(`pnpapi`) as any;
+            const locator = pnpApi.findPackageLocator(moduleFileName);
+            // eslint-disable-next-line no-null/no-null
+            if (locator !== null) {
+                const information = pnpApi.getPackageInformation(locator);
+                packageName = locator.name;
+                parts = {
+                    topLevelNodeModulesIndex: undefined,
+                    topLevelPackageNameIndex: undefined,
+                    packageRootIndex: information.packageLocation.length,
+                    fileNameIndex: moduleFileName.lastIndexOf(`/`),
+                };
+            }
+        }
+
         if (!parts) {
             return undefined;
         }
@@ -322,21 +342,33 @@ namespace ts.moduleSpecifiers {
 
         // If the module could be imported by a directory name, use that directory's name
         const moduleSpecifier = packageNameOnly ? moduleFileName : getDirectoryOrExtensionlessFileName(moduleFileName);
-        const globalTypingsCacheLocation = host.getGlobalTypingsCacheLocation && host.getGlobalTypingsCacheLocation();
-        // Get a path that's relative to node_modules or the importing file's path
-        // if node_modules folder is in this folder or any of its parent folders, no need to keep it.
-        const pathToTopLevelNodeModules = getCanonicalFileName(moduleSpecifier.substring(0, parts.topLevelNodeModulesIndex));
+        // If we already know the package name, no need to go further
+        if (packageName !== undefined) {
+            const typelessPackageName = getPackageNameFromTypesPackageName(packageName);
+            return typelessPackageName + moduleSpecifier.substring(parts.packageRootIndex);
+        }
+
+        if (parts.topLevelNodeModulesIndex === undefined || parts.topLevelPackageNameIndex === undefined) {
+            return undefined;
+        }
+
         // If PnP is enabled the node_modules entries we'll get will always be relevant even if they
         // are located in a weird path apparently outside of the source directory
-        if (!isPnpAvailable() && !(startsWith(sourceDirectory, pathToTopLevelNodeModules) || globalTypingsCacheLocation && startsWith(getCanonicalFileName(globalTypingsCacheLocation), pathToTopLevelNodeModules))) {
-            return undefined;
+        if (!isPnpAvailable()) {
+            const globalTypingsCacheLocation = host.getGlobalTypingsCacheLocation && host.getGlobalTypingsCacheLocation();
+            // Get a path that's relative to node_modules or the importing file's path
+            // if node_modules folder is in this folder or any of its parent folders, no need to keep it.
+            const pathToTopLevelNodeModules = getCanonicalFileName(moduleSpecifier.substring(0, parts.topLevelNodeModulesIndex));
+                if (!(startsWith(sourceDirectory, pathToTopLevelNodeModules) || globalTypingsCacheLocation && startsWith(getCanonicalFileName(globalTypingsCacheLocation), pathToTopLevelNodeModules))) {
+                return undefined;
+            }
         }
 
         // If the module was found in @types, get the actual Node package name
         const nodeModulesDirectoryName = moduleSpecifier.substring(parts.topLevelPackageNameIndex + 1);
-        const packageName = getPackageNameFromTypesPackageName(nodeModulesDirectoryName);
+        const packageNameFromPath = getPackageNameFromTypesPackageName(nodeModulesDirectoryName);
         // For classic resolution, only allow importing from node_modules/@types, not other node_modules
-        return getEmitModuleResolutionKind(options) !== ModuleResolutionKind.NodeJs && packageName === nodeModulesDirectoryName ? undefined : packageName;
+        return getEmitModuleResolutionKind(options) !== ModuleResolutionKind.NodeJs && packageNameFromPath === nodeModulesDirectoryName ? undefined : packageNameFromPath;
 
         function getDirectoryOrExtensionlessFileName(path: string): string {
             // If the file is the main module, it can be imported by the package name
@@ -355,8 +387,8 @@ namespace ts.moduleSpecifiers {
 
             // If the file is /index, it can be imported by its directory name
             // IFF there is not _also_ a file by the same name
-            if (getCanonicalFileName(fullModulePathWithoutExtension.substring(parts.fileNameIndex)) === "/index" && !tryGetAnyFileFromPath(host, fullModulePathWithoutExtension.substring(0, parts.fileNameIndex))) {
-                return fullModulePathWithoutExtension.substring(0, parts.fileNameIndex);
+            if (getCanonicalFileName(fullModulePathWithoutExtension.substring(parts!.fileNameIndex)) === "/index" && !tryGetAnyFileFromPath(host, fullModulePathWithoutExtension.substring(0, parts!.fileNameIndex))) {
+                return fullModulePathWithoutExtension.substring(0, parts!.fileNameIndex);
             }
 
             return fullModulePathWithoutExtension;
@@ -378,6 +410,12 @@ namespace ts.moduleSpecifiers {
     interface NodeModulePathParts {
         readonly topLevelNodeModulesIndex: number;
         readonly topLevelPackageNameIndex: number;
+        readonly packageRootIndex: number;
+        readonly fileNameIndex: number;
+    }
+    interface PackagePathParts {
+        readonly topLevelNodeModulesIndex: undefined;
+        readonly topLevelPackageNameIndex: undefined;
         readonly packageRootIndex: number;
         readonly fileNameIndex: number;
     }
