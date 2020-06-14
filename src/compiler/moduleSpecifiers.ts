@@ -332,6 +332,12 @@ namespace ts.moduleSpecifiers {
             const locator = pnpApi.findPackageLocator(moduleFileName);
             // eslint-disable-next-line no-null/no-null
             if (locator !== null) {
+                const sourceLocator = pnpApi.findPackageLocator(`${sourceDirectory}/`);
+                // Don't use the package name when the imported file is inside
+                // the source directory (prefer a relative path instead)
+                if (locator === sourceLocator) {
+                    return undefined;
+                }
                 const information = pnpApi.getPackageInformation(locator);
                 packageName = locator.name;
                 parts = {
