@@ -15,6 +15,10 @@
         "category": "Error",
         "code": 1006
     },
+    "The parser expected to find a '}' to match the '{' token here.": {
+        "category": "Error",
+        "code": 1007
+    },
     "Trailing comma not allowed.": {
         "category": "Error",
         "code": 1009
@@ -851,6 +855,10 @@
         "category": "Error",
         "code": 1260
     },
+    "Already included file name '{0}' differs from file name '{1}' only in casing.": {
+        "category": "Error",
+        "code": 1261
+    },
     "'with' statements are not allowed in an async function block.": {
         "category": "Error",
         "code": 1300
@@ -903,7 +911,7 @@
         "category": "Error",
         "code": 1322
     },
-    "Dynamic imports are only supported when the '--module' flag is set to 'esnext', 'commonjs',  'amd', 'system', or 'umd'.": {
+    "Dynamic imports are only supported when the '--module' flag is set to 'es2020', 'esnext', 'commonjs', 'amd', 'system', or 'umd'.": {
         "category": "Error",
         "code": 1323
     },
@@ -1050,6 +1058,10 @@
     "Did you mean to parenthesize this function type?": {
         "category": "Error",
         "code": 1360
+    },
+    "'await' outside of an async function is only allowed at the top level of a module when '--module' is 'esnext' or 'system' and '--target' is 'es2017' or higher.": {
+        "category": "Error",
+        "code": 1361
     },
 
     "The types of '{0}' are incompatible between these types.": {
@@ -2603,7 +2615,7 @@
         "category": "Error",
         "code": 2736
     },
-    "BigInt literals are not available when targeting lower than ESNext.": {
+    "BigInt literals are not available when targeting lower than ES2020.": {
         "category": "Error",
         "code": 2737
     },
@@ -3241,7 +3253,7 @@
         "category": "Error",
         "code": 5061
     },
-    "Substitution '{0}' in pattern '{1}' in can have at most one '*' character.": {
+    "Substitution '{0}' in pattern '{1}' can have at most one '*' character.": {
         "category": "Error",
         "code": 5062
     },
@@ -3305,6 +3317,22 @@
         "category": "Error",
         "code": 5077
     },
+    "Unknown watch option '{0}'.": {
+        "category": "Error",
+        "code": 5078
+    },
+    "Unknown watch option '{0}'. Did you mean '{1}'?": {
+        "category": "Error",
+        "code": 5079
+    },
+    "Watch option '{0}' requires a value of type {1}.": {
+        "category": "Error",
+        "code": 5080
+    },
+    "Cannot find a tsconfig.json file at the current directory: {0}.": {
+        "category": "Error",
+        "code": 5081
+    },
 
     "Generates a sourcemap for each corresponding '.d.ts' file.": {
         "category": "Message",
@@ -3366,11 +3394,11 @@
         "category": "Message",
         "code": 6014
     },
-    "Specify ECMAScript target version: 'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', 'ES2018', 'ES2019' or 'ESNEXT'.": {
+    "Specify ECMAScript target version: 'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', 'ES2018', 'ES2019', 'ES2020', or 'ESNEXT'.": {
         "category": "Message",
         "code": 6015
     },
-    "Specify module code generation: 'none', 'commonjs', 'amd', 'system', 'umd', 'es2015', or 'ESNext'.": {
+    "Specify module code generation: 'none', 'commonjs', 'amd', 'system', 'umd', 'es2015', 'es2020', or 'ESNext'.": {
         "category": "Message",
         "code": 6016
     },
@@ -4060,7 +4088,7 @@
         "category": "Message",
         "code": 6201
     },
-        "Project references may not form a circular graph. Cycle detected: {0}": {
+    "Project references may not form a circular graph. Cycle detected: {0}": {
         "category": "Error",
         "code": 6202
     },
@@ -4147,6 +4175,26 @@
     "Generates a CPU profile.": {
         "category": "Message",
         "code": 6223
+    },
+    "Disable solution searching for this project.": {
+        "category": "Message",
+        "code": 6224
+    },
+    "Specify strategy for watching file: 'FixedPollingInterval' (default), 'PriorityPollingInterval', 'DynamicPriorityPolling', 'UseFsEvents', 'UseFsEventsOnParentDirectory'.": {
+        "category": "Message",
+        "code": 6225
+    },
+    "Specify strategy for watching directory on platforms that don't support recursive watching natively: 'UseFsEvents' (default), 'FixedPollingInterval', 'DynamicPriorityPolling'.": {
+        "category": "Message",
+        "code": 6226
+    },
+    "Specify strategy for creating a polling watch when it fails to create using file system events: 'FixedInterval' (default), 'PriorityInterval', 'DynamicPriority'.": {
+        "category": "Message",
+        "code": 6227
+    },
+    "Synchronously call callbacks and update the state of directory watchers on platforms that don't support recursive watching natively.": {
+        "category": "Message",
+        "code": 6228
     },
 
     "Projects to reference": {
@@ -4518,7 +4566,7 @@
         "category": "Error",
         "code": 7051
     },
-    "Element implicitly has an 'any' type because type '{0}' has no index signature. Did you mean to call '{1}' ?": {
+    "Element implicitly has an 'any' type because type '{0}' has no index signature. Did you mean to call '{1}'?": {
         "category": "Error",
         "code": 7052
     },
@@ -4543,59 +4591,51 @@
         "category": "Error",
         "code": 8001
     },
-    "'import ... =' can only be used in a .ts file.": {
+    "'import ... =' can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8002
     },
-    "'export=' can only be used in a .ts file.": {
+    "'export =' can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8003
     },
-    "'type parameter declarations' can only be used in a .ts file.": {
+    "Type parameter declarations can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8004
     },
-    "'implements clauses' can only be used in a .ts file.": {
+    "'implements' clauses can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8005
     },
-    "'interface declarations' can only be used in a .ts file.": {
+    "'{0}' declarations can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8006
     },
-    "'module declarations' can only be used in a .ts file.": {
-        "category": "Error",
-        "code": 8007
-    },
-    "'type aliases' can only be used in a .ts file.": {
+    "Type aliases can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8008
     },
-    "'{0}' can only be used in a .ts file.": {
+    "The '{0}' modifier can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8009
     },
-    "'types' can only be used in a .ts file.": {
+    "Type annotations can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8010
     },
-    "'type arguments' can only be used in a .ts file.": {
+    "Type arguments can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8011
     },
-    "'parameter modifiers' can only be used in a .ts file.": {
+    "Parameter modifiers can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8012
     },
-    "'non-null assertions' can only be used in a .ts file.": {
+    "Non-null assertions can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8013
     },
-    "'enum declarations' can only be used in a .ts file.": {
-        "category": "Error",
-        "code": 8015
-    },
-    "'type assertion expressions' can only be used in a .ts file.": {
+    "Type assertion expressions can only be used in TypeScript files.": {
         "category": "Error",
         "code": 8016
     },

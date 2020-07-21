@@ -378,6 +378,7 @@ namespace ts.codefix {
                 return ImportKind.Equals;
             case ModuleKind.System:
             case ModuleKind.ES2015:
+            case ModuleKind.ES2020:
             case ModuleKind.ESNext:
             case ModuleKind.None:
                 // Fall back to the `import * as ns` style import.
@@ -455,8 +456,8 @@ namespace ts.codefix {
     }
 
     function getExportEqualsImportKind(importingFile: SourceFile, compilerOptions: CompilerOptions, checker: TypeChecker): ImportKind {
-        if (getAllowSyntheticDefaultImports(compilerOptions) && getEmitModuleKind(compilerOptions) >= ModuleKind.ES2015) {
-            return ImportKind.Default;
+        if (getEmitModuleKind(compilerOptions) >= ModuleKind.ES2015) {
+            return getAllowSyntheticDefaultImports(compilerOptions) ? ImportKind.Default : ImportKind.Namespace;
         }
         if (isInJSFile(importingFile)) {
             return isExternalModule(importingFile) ? ImportKind.Default : ImportKind.ConstEquals;
