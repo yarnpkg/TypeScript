@@ -270,9 +270,11 @@ namespace ts.server {
         }
     }
 
-    /*@internal*/
     export function isDynamicFileName(fileName: NormalizedPath) {
-        return fileName[0] === "^" || getBaseFileName(fileName)[0] === "^";
+        return fileName[0] === "^" ||
+            ((stringContains(fileName, "walkThroughSnippet:/") || stringContains(fileName, "untitled:/")) &&
+                getBaseFileName(fileName)[0] === "^") ||
+            (stringContains(fileName, ":^") && !stringContains(fileName, directorySeparator));
     }
 
     /*@internal*/
@@ -284,7 +286,7 @@ namespace ts.server {
     /*@internal*/
     export interface SourceMapFileWatcher {
         watcher: FileWatcher;
-        sourceInfos?: Map<true>;
+        sourceInfos?: Set<Path>;
     }
 
     export class ScriptInfo {
@@ -322,7 +324,7 @@ namespace ts.server {
         /*@internal*/
         declarationInfoPath?: Path;
         /*@internal*/
-        sourceInfos?: Map<true>;
+        sourceInfos?: Set<Path>;
         /*@internal*/
         documentPositionMapper?: DocumentPositionMapper | false;
 
@@ -489,7 +491,7 @@ namespace ts.server {
                 case 0:
                     return Errors.ThrowNoProject();
                 case 1:
-                    return this.containingProjects[0];
+                    return ensureNotAutoImportProvider(this.containingProjects[0]);
                 default:
                     // If this file belongs to multiple projects, below is the order in which default project is used
                     // - for open script info, its default configured project during opening is default if info is part of it
@@ -499,6 +501,7 @@ namespace ts.server {
                     // - first inferred project
                     let firstExternalProject: ExternalProject | undefined;
                     let firstConfiguredProject: ConfiguredProject | undefined;
+                    let firstInferredProject: InferredProject | undefined;
                     let firstNonSourceOfProjectReferenceRedirect: ConfiguredProject | undefined;
                     let defaultConfiguredProject: ConfiguredProject | false | undefined;
                     for (let index = 0; index < this.containingProjects.length; index++) {
@@ -519,12 +522,15 @@ namespace ts.server {
                         else if (!firstExternalProject && isExternalProject(project)) {
                             firstExternalProject = project;
                         }
+                        else if (!firstInferredProject && isInferredProject(project)) {
+                            firstInferredProject = project;
+                        }
                     }
-                    return defaultConfiguredProject ||
+                    return ensureNotAutoImportProvider(defaultConfiguredProject ||
                         firstNonSourceOfProjectReferenceRedirect ||
                         firstConfiguredProject ||
                         firstExternalProject ||
-                        this.containingProjects[0];
+                        firstInferredProject);
             }
         }
 
@@ -554,6 +560,8 @@ namespace ts.server {
         }
 
         getLatestVersion() {
+            // Ensure we have updated snapshot to give back latest version
+            this.textStorage.getSnapshot();
             return this.textStorage.getVersion();
         }
 
@@ -603,6 +611,11 @@ namespace ts.server {
             return !forEach(this.containingProjects, p => !p.isOrphan());
         }
 
+        /*@internal*/
+        isContainedByAutoImportProvider() {
+            return some(this.containingProjects, p => p.projectKind === ProjectKind.AutoImportProvider);
+        }
+
         /**
          *  @param line 1 based index
          */
@@ -644,6 +657,13 @@ namespace ts.server {
                 this.sourceMapFilePath = undefined;
             }
         }
+    }
+
+    function ensureNotAutoImportProvider(project: Project | undefined) {
+        if (!project || project.projectKind === ProjectKind.AutoImportProvider) {
+            return Errors.ThrowNoProject();
+        }
+        return project;
     }
 
     function failIfInvalidPosition(position: number) {

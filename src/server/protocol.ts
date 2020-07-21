@@ -136,7 +136,18 @@ namespace ts.server.protocol {
         SelectionRange = "selectionRange",
         /* @internal */
         SelectionRangeFull = "selectionRange-full",
-
+        ToggleLineComment = "toggleLineComment",
+        /* @internal */
+        ToggleLineCommentFull = "toggleLineComment-full",
+        ToggleMultilineComment = "toggleMultilineComment",
+        /* @internal */
+        ToggleMultilineCommentFull = "toggleMultilineComment-full",
+        CommentSelection = "commentSelection",
+        /* @internal */
+        CommentSelectionFull = "commentSelection-full",
+        UncommentSelection = "uncommentSelection",
+        /* @internal */
+        UncommentSelectionFull = "uncommentSelection-full",
         PrepareCallHierarchy = "prepareCallHierarchy",
         ProvideCallHierarchyIncomingCalls = "provideCallHierarchyIncomingCalls",
         ProvideCallHierarchyOutgoingCalls = "provideCallHierarchyOutgoingCalls",
@@ -236,6 +247,22 @@ namespace ts.server.protocol {
          * Contains extra information that plugin can include to be passed on
          */
         metadata?: unknown;
+
+        /**
+         * Exposes information about the performance of this request-response pair.
+         */
+        performanceData?: PerformanceData;
+    }
+
+    export interface PerformanceData {
+        /**
+         * Time spent updating the program graph, in milliseconds.
+         */
+        updateGraphDurationMs?: number;
+        /**
+         * The time spent creating or updating the auto-import program, in milliseconds.
+         */
+        createAutoImportProviderProgramDurationMs?: number;
     }
 
     /**
@@ -486,6 +513,7 @@ namespace ts.server.protocol {
         code: number;
         /** May store more in future. For now, this will simply be `true` to indicate when a diagnostic is an unused-identifier diagnostic. */
         reportsUnnecessary?: {};
+        reportsDeprecated?: {};
         relatedInformation?: DiagnosticRelatedInformation[];
     }
 
@@ -534,7 +562,11 @@ namespace ts.server.protocol {
         command: CommandTypes.GetApplicableRefactors;
         arguments: GetApplicableRefactorsRequestArgs;
     }
-    export type GetApplicableRefactorsRequestArgs = FileLocationOrRangeRequestArgs;
+    export type GetApplicableRefactorsRequestArgs = FileLocationOrRangeRequestArgs & {
+        triggerReason?: RefactorTriggerReason
+    };
+
+    export type RefactorTriggerReason = "implicit" | "invoked";
 
     /**
      * Response is a list of available refactorings.
@@ -845,10 +877,25 @@ namespace ts.server.protocol {
     }
 
     /** @internal */
-    export interface EmitOutputRequest extends FileRequest {}
+    export interface EmitOutputRequest extends FileRequest {
+        command: CommandTypes.EmitOutput;
+        arguments: EmitOutputRequestArgs;
+    }
+    /** @internal */
+    export interface EmitOutputRequestArgs extends FileRequestArgs {
+        includeLinePosition?: boolean;
+        /** if true - return response as object with emitSkipped and diagnostics */
+        richResponse?: boolean;
+    }
     /** @internal */
     export interface EmitOutputResponse extends Response {
-        readonly body: EmitOutput;
+        readonly body: EmitOutput | ts.EmitOutput;
+    }
+    /** @internal */
+    export interface EmitOutput {
+        outputFiles: OutputFile[];
+        emitSkipped: boolean;
+        diagnostics: Diagnostic[] | DiagnosticWithLinePosition[];
     }
 
     /**
@@ -1313,6 +1360,18 @@ namespace ts.server.protocol {
         lastFileExceededProgramSize?: string;
     }
 
+    export interface FileWithProjectReferenceRedirectInfo {
+        /**
+         * Name of file
+         */
+        fileName: string;
+
+        /**
+         * True if the file is primarily included in a referenced project
+         */
+        isSourceOfProjectReferenceRedirect: boolean;
+    }
+
     /**
      * Represents a set of changes that happen in project
      */
@@ -1320,15 +1379,20 @@ namespace ts.server.protocol {
         /**
          * List of added files
          */
-        added: string[];
+        added: string[] | FileWithProjectReferenceRedirectInfo[];
         /**
          * List of removed files
          */
-        removed: string[];
+        removed: string[] | FileWithProjectReferenceRedirectInfo[];
         /**
          * List of updated files
          */
-        updated: string[];
+        updated: string[] | FileWithProjectReferenceRedirectInfo[];
+        /**
+         * List of files that have had their project reference redirect status updated
+         * Only provided when the synchronizeProjectList request has includeProjectReferenceRedirectInfo set to true
+         */
+        updatedRedirects?: FileWithProjectReferenceRedirectInfo[];
     }
 
     /**
@@ -1346,8 +1410,10 @@ namespace ts.server.protocol {
         info?: ProjectVersionInfo;
         /**
          * List of files in project (might be omitted if current state of project can be computed using only information from 'changes')
+         * This property will have type FileWithProjectReferenceRedirectInfo[] if includeProjectReferenceRedirectInfo is set to true in
+         * the corresponding SynchronizeProjectList request; otherwise, it will have type string[].
          */
-        files?: string[];
+        files?: string[] | FileWithProjectReferenceRedirectInfo[];
         /**
          * Set of changes in project (omitted if the entire set of files in project should be replaced)
          */
@@ -1487,6 +1553,26 @@ namespace ts.server.protocol {
         parent?: SelectionRange;
     }
 
+    export interface ToggleLineCommentRequest extends FileRequest {
+        command: CommandTypes.ToggleLineComment;
+        arguments: FileRangeRequestArgs;
+    }
+
+    export interface ToggleMultilineCommentRequest extends FileRequest {
+        command: CommandTypes.ToggleMultilineComment;
+        arguments: FileRangeRequestArgs;
+    }
+
+    export interface CommentSelectionRequest extends FileRequest {
+        command: CommandTypes.CommentSelection;
+        arguments: FileRangeRequestArgs;
+    }
+
+    export interface UncommentSelectionRequest extends FileRequest {
+        command: CommandTypes.UncommentSelection;
+        arguments: FileRangeRequestArgs;
+    }
+
     /**
      *  Information found in an "open" request.
      */
@@ -1610,6 +1696,11 @@ namespace ts.server.protocol {
          * List of last known projects
          */
         knownProjects: ProjectVersionInfo[];
+        /**
+         * If true, response specifies whether or not each file in each project
+         * is a source from a project reference redirect
+         */
+        includeProjectReferenceRedirectInfo?: boolean;
     }
 
     /**
@@ -1772,6 +1863,18 @@ namespace ts.server.protocol {
          * if true - then file should be recompiled even if it does not have any changes.
          */
         forced?: boolean;
+        includeLinePosition?: boolean;
+        /** if true - return response as object with emitSkipped and diagnostics */
+        richResponse?: boolean;
+    }
+
+    export interface CompileOnSaveEmitFileResponse extends Response {
+        body: boolean | EmitResult;
+    }
+
+    export interface EmitResult {
+        emitSkipped: boolean;
+        diagnostics: Diagnostic[] | DiagnosticWithLinePosition[];
     }
 
     /**
@@ -1961,7 +2064,7 @@ namespace ts.server.protocol {
         arguments: FormatOnKeyRequestArgs;
     }
 
-    export type CompletionsTriggerCharacter = "." | '"' | "'" | "`" | "/" | "@" | "<";
+    export type CompletionsTriggerCharacter = "." | '"' | "'" | "`" | "/" | "@" | "<" | "#";
 
     /**
      * Arguments for completions messages.
@@ -2086,6 +2189,16 @@ namespace ts.server.protocol {
          * Then either that enum/class or a namespace containing it will be the recommended symbol.
          */
         isRecommended?: true;
+        /**
+         * If true, this completion was generated from traversing the name table of an unchecked JS file,
+         * and therefore may not be accurate.
+         */
+        isFromUncheckedFile?: true;
+        /**
+         * If true, this completion was for an auto-import of a module not yet in the program, but listed
+         * in the project package.json.
+         */
+        isPackageJsonImport?: true;
     }
 
     /**
@@ -2463,6 +2576,8 @@ namespace ts.server.protocol {
 
         reportsUnnecessary?: {};
 
+        reportsDeprecated?: {};
+
         /**
          * Any related spans the diagnostic may have, such as other locations relevant to an error, such as declarartion sites
          */
@@ -2716,7 +2831,7 @@ namespace ts.server.protocol {
     /**
      * Arguments for navto request message.
      */
-    export interface NavtoRequestArgs extends FileRequestArgs {
+    export interface NavtoRequestArgs {
         /**
          * Search term to navigate to from current location; term can
          * be '.*' or an identifier prefix.
@@ -2726,6 +2841,10 @@ namespace ts.server.protocol {
          *  Optional limit on the number of items to return.
          */
         maxResultCount?: number;
+        /**
+         * The file for the request (absolute pathname required).
+         */
+        file?: string;
         /**
          * Optional flag to indicate we want results for just the current file
          * or the entire project.
@@ -2741,7 +2860,7 @@ namespace ts.server.protocol {
      * match the search term given in argument 'searchTerm'.  The
      * context for the search is given by the named file.
      */
-    export interface NavtoRequest extends FileRequest {
+    export interface NavtoRequest extends Request {
         command: CommandTypes.Navto;
         arguments: NavtoRequestArgs;
     }
@@ -2990,9 +3109,11 @@ namespace ts.server.protocol {
     export interface CallHierarchyItem {
         name: string;
         kind: ScriptElementKind;
+        kindModifiers?: string
         file: string;
         span: TextSpan;
         selectionSpan: TextSpan;
+        containerName?: string;
     }
 
     export interface CallHierarchyIncomingCall {
@@ -3048,6 +3169,7 @@ namespace ts.server.protocol {
         newLineCharacter?: string;
         convertTabsToSpaces?: boolean;
         indentStyle?: IndentStyle | ts.IndentStyle;
+        trimTrailingWhitespace?: boolean;
     }
 
     export interface FormatCodeSettings extends EditorSettings {
@@ -3090,10 +3212,13 @@ namespace ts.server.protocol {
          */
         readonly includeAutomaticOptionalChainCompletions?: boolean;
         readonly importModuleSpecifierPreference?: "auto" | "relative" | "non-relative";
+        /** Determines whether we import `foo/index.ts` as "foo", "foo/index", or "foo/index.js" */
+        readonly importModuleSpecifierEnding?: "auto" | "minimal" | "index" | "js";
         readonly allowTextChangesInNewFiles?: boolean;
         readonly lazyConfiguredProjectsFromExternalProject?: boolean;
         readonly providePrefixAndSuffixTextForRename?: boolean;
         readonly allowRenameOfImportPath?: boolean;
+        readonly includePackageJsonAutoImports?: "exclude-dev" | "all" | "none";
     }
 
     export interface CompilerOptions {

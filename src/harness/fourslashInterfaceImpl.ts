@@ -27,7 +27,7 @@ namespace FourSlashInterface {
             return this.ranges().map(r => ts.createTextSpan(r.pos, r.end - r.pos));
         }
 
-        public rangesByText(): ts.Map<FourSlash.Range[]> {
+        public rangesByText(): ts.ESMap<string, FourSlash.Range[]> {
             return this.state.rangesByText();
         }
 
@@ -191,6 +191,10 @@ namespace FourSlashInterface {
             this.state.verifyCodeFixAvailable(this.negative, options);
         }
 
+        public codeFixAllAvailable(fixName: string) {
+            this.state.verifyCodeFixAllAvailable(this.negative, fixName);
+        }
+
         public applicableRefactorAvailableAtMarker(markerName: string) {
             this.state.verifyApplicableRefactorAvailableAtMarker(this.negative, markerName);
         }
@@ -204,7 +208,27 @@ namespace FourSlashInterface {
         }
 
         public refactorAvailable(name: string, actionName?: string) {
-            this.state.verifyRefactorAvailable(this.negative, name, actionName);
+            this.state.verifyRefactorAvailable(this.negative, "implicit", name, actionName);
+        }
+
+        public refactorAvailableForTriggerReason(triggerReason: ts.RefactorTriggerReason, name: string, actionName?: string) {
+            this.state.verifyRefactorAvailable(this.negative, triggerReason, name, actionName);
+        }
+
+        public toggleLineComment(newFileContent: string) {
+            this.state.toggleLineComment(newFileContent);
+        }
+
+        public toggleMultilineComment(newFileContent: string) {
+            this.state.toggleMultilineComment(newFileContent);
+        }
+
+        public commentSelection(newFileContent: string) {
+            this.state.commentSelection(newFileContent);
+        }
+
+        public uncommentSelection(newFileContent: string) {
+            this.state.uncommentSelection(newFileContent);
         }
     }
 
@@ -306,6 +330,10 @@ namespace FourSlashInterface {
 
         public typeOfSymbolAtLocation(range: FourSlash.Range, symbol: ts.Symbol, expected: string) {
             this.state.verifyTypeOfSymbolAtLocation(range, symbol, expected);
+        }
+
+        public baselineFindAllReferences(markerName: string) {
+            this.state.verifyBaselineFindAllReferences(markerName);
         }
 
         public referenceGroups(starts: ArrayOrSingle<string> | ArrayOrSingle<FourSlash.Range>, parts: ReferenceGroup[]) {
@@ -512,6 +540,10 @@ namespace FourSlashInterface {
             this.state.verifyRenameLocations(startRanges, options);
         }
 
+        public baselineRename(marker: string, options: RenameOptions) {
+            this.state.baselineRename(marker, options);
+        }
+
         public verifyQuickInfoDisplayParts(kind: string, kindModifiers: string, textSpan: FourSlash.TextSpan,
             displayParts: ts.SymbolDisplayPart[], documentation: ts.SymbolDisplayPart[], tags: ts.JSDocTagInfo[]) {
             this.state.verifyQuickInfoDisplayParts(kind, kindModifiers, textSpan, displayParts, documentation, tags);
@@ -551,6 +583,10 @@ namespace FourSlashInterface {
 
         public noMoveToNewFile(): void {
             this.state.noMoveToNewFile();
+        }
+
+        public organizeImports(newContent: string) {
+            this.state.verifyOrganizeImports(newContent);
         }
     }
 
@@ -715,7 +751,7 @@ namespace FourSlashInterface {
         }
 
         public setOption(name: keyof ts.FormatCodeSettings, value: number | string | boolean): void {
-            this.state.formatCodeSettings = { ...this.state.formatCodeSettings, [name]: value };
+            this.state.setFormatOptions({ ...this.state.formatCodeSettings, [name]: value });
         }
     }
 
@@ -837,6 +873,7 @@ namespace FourSlashInterface {
     }
     export namespace Completion {
         export import SortText = ts.Completions.SortText;
+        export import CompletionSource = ts.Completions.CompletionSource;
 
         const functionEntry = (name: string): ExpectedCompletionEntryObject => ({
             name,
@@ -889,7 +926,7 @@ namespace FourSlashInterface {
         const res: ExpectedCompletionEntryObject[] = [];
         for (let i = ts.SyntaxKind.FirstKeyword; i <= ts.SyntaxKind.LastKeyword; i++) {
             res.push({
-                name: ts.Debug.assertDefined(ts.tokenToString(i)),
+                name: ts.Debug.checkDefined(ts.tokenToString(i)),
                 kind: "keyword",
                 sortText: SortText.GlobalsOrKeywords
             });
@@ -898,7 +935,7 @@ namespace FourSlashInterface {
         export const keywords: readonly ExpectedCompletionEntryObject[] = keywordsWithUndefined.filter(k => k.name !== "undefined");
 
         export const typeKeywords: readonly ExpectedCompletionEntryObject[] =
-            ["false", "null", "true", "void", "any", "boolean", "keyof", "never", "readonly", "number", "object", "string", "symbol", "undefined", "unique", "unknown", "bigint"].map(keywordEntry);
+            ["false", "null", "true", "void", "asserts", "any", "boolean", "keyof", "never", "readonly", "number", "object", "string", "symbol", "undefined", "unique", "unknown", "bigint"].map(keywordEntry);
 
         const globalTypeDecls: readonly ExpectedCompletionEntryObject[] = [
             interfaceEntry("Symbol"),
@@ -1054,7 +1091,7 @@ namespace FourSlashInterface {
         }
 
         export const classElementKeywords: readonly ExpectedCompletionEntryObject[] =
-            ["private", "protected", "public", "static", "abstract", "async", "constructor", "get", "readonly", "set"].map(keywordEntry);
+            ["private", "protected", "public", "static", "abstract", "async", "constructor", "declare", "get", "readonly", "set"].map(keywordEntry);
 
         export const classElementInJsKeywords = getInJsKeywords(classElementKeywords);
 
@@ -1148,6 +1185,8 @@ namespace FourSlashInterface {
             "let",
             "package",
             "yield",
+            "as",
+            "asserts",
             "any",
             "async",
             "await",
@@ -1347,6 +1386,8 @@ namespace FourSlashInterface {
             "let",
             "package",
             "yield",
+            "as",
+            "asserts",
             "any",
             "async",
             "await",
@@ -1462,6 +1503,7 @@ namespace FourSlashInterface {
         actionName: string;
         actionDescription: string;
         newContent: NewFileContent;
+        triggerReason?: ts.RefactorTriggerReason;
     }
 
     export type ExpectedCompletionEntry = string | ExpectedCompletionEntryObject;
@@ -1472,7 +1514,9 @@ namespace FourSlashInterface {
         readonly replacementSpan?: FourSlash.Range;
         readonly hasAction?: boolean; // If not specified, will assert that this is false.
         readonly isRecommended?: boolean; // If not specified, will assert that this is false.
+        readonly isFromUncheckedFile?: boolean; // If not specified, won't assert about this
         readonly kind?: string; // If not specified, won't assert about this
+        readonly isPackageJsonImport?: boolean; // If not specified, won't assert about this
         readonly kindModifiers?: string; // Must be paired with 'kind'
         readonly text?: string;
         readonly documentation?: string;
@@ -1510,6 +1554,7 @@ namespace FourSlashInterface {
         /** @default ts.emptyArray */
         readonly tags?: readonly ts.JSDocTagInfo[];
         readonly triggerReason?: ts.SignatureHelpTriggerReason;
+        readonly overrideSelectedItemIndex?: number;
     }
 
     export interface VerifyNavigateToOptions {
@@ -1552,7 +1597,7 @@ namespace FourSlashInterface {
     }
 
     export interface VerifyCodeFixOptions extends NewContentOptions {
-        readonly description: string | DiagnosticIgnoredInterpolations;
+        readonly description: string | [string, ...(string | number)[]] | DiagnosticIgnoredInterpolations;
         readonly errorCode?: number;
         readonly index?: number;
         readonly preferences?: ts.UserPreferences;
@@ -1590,6 +1635,7 @@ namespace FourSlashInterface {
         range?: FourSlash.Range;
         code: number;
         reportsUnnecessary?: true;
+        reportsDeprecated?: true;
     }
 
     export interface GetEditsForFileRenameOptions {
@@ -1614,4 +1660,9 @@ namespace FourSlashInterface {
         template: string
     };
     export type RenameLocationOptions = FourSlash.Range | { readonly range: FourSlash.Range, readonly prefixText?: string, readonly suffixText?: string };
+    export interface RenameOptions {
+        readonly findInStrings?: boolean;
+        readonly findInComments?: boolean;
+        readonly providePrefixAndSuffixTextForRename?: boolean;
+    };
 }

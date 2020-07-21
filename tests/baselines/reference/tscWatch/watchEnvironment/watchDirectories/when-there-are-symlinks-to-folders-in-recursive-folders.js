@@ -1,4 +1,4 @@
-/a/lib/tsc.js --w
+Input::
 //// [/a/lib/lib.d.ts]
 /// <reference no-default-lib="true"/>
 interface Boolean {}
@@ -28,15 +28,10 @@ export {}
 //// [/home/user/projects/myproject/node_modules/b] symlink(/home/user/projects/myproject/node_modules/realb)
 //// [/home/user/projects/myproject/node_modules/reala/node_modules/b] symlink(/home/user/projects/myproject/node_modules/b)
 //// [/home/user/projects/myproject/node_modules/realb/node_modules/a] symlink(/home/user/projects/myproject/node_modules/a)
-//// [/home/user/projects/myproject/src/file.js]
-"use strict";
-exports.__esModule = true;
 
-
-
+/a/lib/tsc.js --w
 Output::
-
-12:00:45 AM - Starting compilation in watch mode...
+[[90m12:00:45 AM[0m] Starting compilation in watch mode...
 
 
 Current directory: /home/user/projects/myproject CaseSensitiveFileNames: false
@@ -95,8 +90,8 @@ DirectoryWatcher:: Added:: WatchInfo: /home/user/projects/myproject/node_modules
 
 Elapsed:: *ms DirectoryWatcher:: Added:: WatchInfo: /home/user/projects/myproject/node_modules/@types 1 undefined Type roots
 
+[[90m12:00:48 AM[0m] Found 0 errors. Watching for file changes.
 
-12:00:48 AM - Found 0 errors. Watching for file changes.
 
 DirectoryWatcher:: Added:: WatchInfo: /home/user/projects/myproject 1 undefined Wild card directory
 
@@ -117,32 +112,38 @@ Semantic diagnostics in builder refreshed for::
 
 WatchedFiles::
 /home/user/projects/myproject/tsconfig.json:
-  {"pollingInterval":250}
+  {"fileName":"/home/user/projects/myproject/tsconfig.json","pollingInterval":250}
 /home/user/projects/myproject/src/file.ts:
-  {"pollingInterval":250}
+  {"fileName":"/home/user/projects/myproject/src/file.ts","pollingInterval":250}
 /home/user/projects/myproject/node_modules/reala/index.d.ts:
-  {"pollingInterval":250}
+  {"fileName":"/home/user/projects/myproject/node_modules/reala/index.d.ts","pollingInterval":250}
 /a/lib/lib.d.ts:
-  {"pollingInterval":250}
+  {"fileName":"/a/lib/lib.d.ts","pollingInterval":250}
 
 FsWatches::
 /home/user/projects/myproject/src:
-  {"fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
+  {"directoryName":"/home/user/projects/myproject/src","fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
 /home/user/projects/myproject/node_modules:
-  {"fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
+  {"directoryName":"/home/user/projects/myproject/node_modules","fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
 /home/user/projects/myproject/node_modules/reala:
-  {"fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
+  {"directoryName":"/home/user/projects/myproject/node_modules/reala","fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
 /home/user/projects/myproject/node_modules/reala/node_modules:
-  {"fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
+  {"directoryName":"/home/user/projects/myproject/node_modules/reala/node_modules","fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
 /home/user/projects/myproject/node_modules/realb:
-  {"fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
+  {"directoryName":"/home/user/projects/myproject/node_modules/realb","fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
 /home/user/projects/myproject/node_modules/realb/node_modules:
-  {"fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
+  {"directoryName":"/home/user/projects/myproject/node_modules/realb/node_modules","fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
 /home/user/projects/myproject/node_modules/@types:
-  {"fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
+  {"directoryName":"/home/user/projects/myproject/node_modules/@types","fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
 /home/user/projects/myproject:
-  {"fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
+  {"directoryName":"/home/user/projects/myproject","fallbackPollingInterval":500,"fallbackOptions":{"watchFile":"PriorityPollingInterval"}}
 
 FsWatchesRecursive::
 
 exitCode:: ExitStatus.undefined
+
+//// [/home/user/projects/myproject/src/file.js]
+"use strict";
+exports.__esModule = true;
+
+

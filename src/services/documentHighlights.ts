@@ -28,7 +28,7 @@ namespace ts {
         }
 
         function getSemanticDocumentHighlights(position: number, node: Node, program: Program, cancellationToken: CancellationToken, sourceFilesToSearch: readonly SourceFile[]): DocumentHighlights[] | undefined {
-            const sourceFilesSet = arrayToSet(sourceFilesToSearch, f => f.fileName);
+            const sourceFilesSet = new Set(sourceFilesToSearch.map(f => f.fileName));
             const referenceEntries = FindAllReferences.getReferenceEntriesForNode(position, node, program, sourceFilesToSearch, cancellationToken, /*options*/ undefined, sourceFilesSet);
             if (!referenceEntries) return undefined;
             const map = arrayToMultiMap(referenceEntries.map(FindAllReferences.toHighlightSpan), e => e.fileName, e => e.span);
@@ -66,8 +66,12 @@ namespace ts {
                 case SyntaxKind.SwitchKeyword:
                     return useParent(node.parent, isSwitchStatement, getSwitchCaseDefaultOccurrences);
                 case SyntaxKind.CaseKeyword:
-                case SyntaxKind.DefaultKeyword:
-                    return useParent(node.parent.parent.parent, isSwitchStatement, getSwitchCaseDefaultOccurrences);
+                case SyntaxKind.DefaultKeyword: {
+                    if (isDefaultClause(node.parent) || isCaseClause(node.parent)) {
+                        return useParent(node.parent.parent.parent, isSwitchStatement, getSwitchCaseDefaultOccurrences);
+                    }
+                    return undefined;
+                }
                 case SyntaxKind.BreakKeyword:
                 case SyntaxKind.ContinueKeyword:
                     return useParent(node.parent, isBreakOrContinueStatement, getBreakOrContinueStatementOccurrences);

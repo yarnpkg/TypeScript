@@ -31,6 +31,7 @@ namespace ts.server {
             }
             case "openbsd":
             case "freebsd":
+            case "netbsd":
             case "darwin":
             case "linux":
             case "android": {
@@ -211,7 +212,7 @@ namespace ts.server {
             if (this.fd >= 0) {
                 const buf = sys.bufferFrom!(s);
                 // eslint-disable-next-line no-null/no-null
-                fs.writeSync(this.fd, buf, 0, buf.length, /*position*/ null!); // TODO: GH#18217
+                fs.writeSync(this.fd, buf as globalThis.Buffer, 0, buf.length, /*position*/ null!); // TODO: GH#18217
             }
             if (this.traceToConsole) {
                 console.warn(s);
@@ -229,10 +230,10 @@ namespace ts.server {
         private projectService!: ProjectService;
         private activeRequestCount = 0;
         private requestQueue: QueuedOperation[] = [];
-        private requestMap = createMap<QueuedOperation>(); // Maps operation ID to newest requestQueue entry with that ID
+        private requestMap = new Map<string, QueuedOperation>(); // Maps operation ID to newest requestQueue entry with that ID
         /** We will lazily request the types registry on the first call to `isKnownTypesPackageName` and store it in `typesRegistryCache`. */
         private requestedRegistry = false;
-        private typesRegistryCache: Map<MapLike<string>> | undefined;
+        private typesRegistryCache: ESMap<string, MapLike<string>> | undefined;
 
         // This number is essentially arbitrary.  Processing more than one typings request
         // at a time makes sense, but having too many in the pipe results in a hang
@@ -373,7 +374,7 @@ namespace ts.server {
 
             switch (response.kind) {
                 case EventTypesRegistry:
-                    this.typesRegistryCache = createMapFromTemplate(response.typesRegistry);
+                    this.typesRegistryCache = new Map(getEntries(response.typesRegistry));
                     break;
                 case ActionPackageInstalled: {
                     const { success, message } = response;
@@ -792,7 +793,7 @@ namespace ts.server {
             // //server/location
             //         ^ <- from 0 to this position
             const firstSlash = path.indexOf(directorySeparator, 2);
-            return firstSlash !== -1 ? path.substring(0, firstSlash).toLowerCase() : path;
+            return firstSlash !== -1 ? toFileNameLowerCase(path.substring(0, firstSlash)) : path;
         }
         const rootLength = getRootLength(path);
         if (rootLength === 0) {
@@ -801,7 +802,7 @@ namespace ts.server {
         }
         if (path.charCodeAt(1) === CharacterCodes.colon && path.charCodeAt(2) === CharacterCodes.slash) {
             // rooted path that starts with c:/... - extract drive letter
-            return path.charAt(0).toLowerCase();
+            return toFileNameLowerCase(path.charAt(0));
         }
         if (path.charCodeAt(0) === CharacterCodes.slash && path.charCodeAt(1) !== CharacterCodes.slash) {
             // rooted path that starts with slash - /somename - use key for current drive
@@ -837,7 +838,7 @@ namespace ts.server {
 
     if (useWatchGuard) {
         const currentDrive = extractWatchDirectoryCacheKey(sys.resolvePath(sys.getCurrentDirectory()), /*currentDriveKey*/ undefined);
-        const statusCache = createMap<boolean>();
+        const statusCache = new Map<string, boolean>();
         sys.watchDirectory = (path, callback, recursive, options) => {
             const cacheKey = extractWatchDirectoryCacheKey(path, currentDrive);
             let status = cacheKey && statusCache.get(cacheKey);
@@ -884,7 +885,7 @@ namespace ts.server {
     }
 
     // Override sys.write because fs.writeSync is not reliable on Node 4
-    sys.write = (s: string) => writeMessage(sys.bufferFrom!(s, "utf8"));
+    sys.write = (s: string) => writeMessage(sys.bufferFrom!(s, "utf8") as globalThis.Buffer);
     sys.watchFile = (fileName, callback) => {
         const watchedFile = pollingWatchedFileSet.addFile(fileName, callback);
         return {

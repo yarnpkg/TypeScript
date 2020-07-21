@@ -310,7 +310,7 @@ namespace ts {
     function createUseFsEventsOnParentDirectoryWatchFile(fsWatch: FsWatch, useCaseSensitiveFileNames: boolean): HostWatchFile {
         // One file can have multiple watchers
         const fileWatcherCallbacks = createMultiMap<FileWatcherCallback>();
-        const dirWatchers = createMap<DirectoryWatcher>();
+        const dirWatchers = new Map<string, DirectoryWatcher>();
         const toCanonicalName = createGetCanonicalFileName(useCaseSensitiveFileNames);
         return nonPollingWatchFile;
 
@@ -370,7 +370,7 @@ namespace ts {
             watcher: FileWatcher;
             refCount: number;
         }
-        const cache = createMap<SingleFileWatcher>();
+        const cache = new Map<string, SingleFileWatcher>();
         const callbacksCache = createMultiMap<FileWatcherCallback>();
         const toCanonicalFileName = createGetCanonicalFileName(useCaseSensitiveFileNames);
 
@@ -398,7 +398,7 @@ namespace ts {
 
             return {
                 close: () => {
-                    const watcher = Debug.assertDefined(cache.get(path));
+                    const watcher = Debug.checkDefined(cache.get(path));
                     callbacksCache.remove(path, callback);
                     watcher.refCount--;
                     if (watcher.refCount) return;
@@ -473,9 +473,9 @@ namespace ts {
             refCount: number;
         }
 
-        const cache = createMap<HostDirectoryWatcher>();
-        const callbackCache = createMultiMap<{ dirName: string; callback: DirectoryWatcherCallback; }>();
-        const cacheToUpdateChildWatches = createMap<{ dirName: string; options: WatchOptions | undefined; }>();
+        const cache = new Map<string, HostDirectoryWatcher>();
+        const callbackCache = createMultiMap<Path, { dirName: string; callback: DirectoryWatcherCallback; }>();
+        const cacheToUpdateChildWatches = new Map<Path, { dirName: string; options: WatchOptions | undefined; fileNames: string[]; }>();
         let timerToUpdateChildWatches: any;
 
         const filePathComparer = getStringComparer(!host.useCaseSensitiveFileNames);
@@ -525,7 +525,7 @@ namespace ts {
             return {
                 dirName,
                 close: () => {
-                    const directoryWatcher = Debug.assertDefined(cache.get(dirPath));
+                    const directoryWatcher = Debug.checkDefined(cache.get(dirPath));
                     if (callbackToAdd) callbackCache.remove(dirPath, callbackToAdd);
                     directoryWatcher.refCount--;
 
@@ -538,9 +538,12 @@ namespace ts {
             };
         }
 
-        function invokeCallbacks(dirPath: Path, fileNameOrInvokeMap: string | Map<true>) {
+        type InvokeMap = ESMap<Path, string[] | true>;
+        function invokeCallbacks(dirPath: Path, fileName: string): void;
+        function invokeCallbacks(dirPath: Path, invokeMap: InvokeMap, fileNames: string[] | undefined): void;
+        function invokeCallbacks(dirPath: Path, fileNameOrInvokeMap: string | InvokeMap, fileNames?: string[]) {
             let fileName: string | undefined;
-            let invokeMap: Map<true> | undefined;
+            let invokeMap: InvokeMap | undefined;
             if (isString(fileNameOrInvokeMap)) {
                 fileName = fileNameOrInvokeMap;
             }
@@ -549,10 +552,21 @@ namespace ts {
             }
             // Call the actual callback
             callbackCache.forEach((callbacks, rootDirName) => {
-                if (invokeMap && invokeMap.has(rootDirName)) return;
+                if (invokeMap && invokeMap.get(rootDirName) === true) return;
                 if (rootDirName === dirPath || (startsWith(dirPath, rootDirName) && dirPath[rootDirName.length] === directorySeparator)) {
                     if (invokeMap) {
-                        invokeMap.set(rootDirName, true);
+                        if (fileNames) {
+                            const existing = invokeMap.get(rootDirName);
+                            if (existing) {
+                                (existing as string[]).push(...fileNames);
+                            }
+                            else {
+                                invokeMap.set(rootDirName, fileNames.slice());
+                            }
+                        }
+                        else {
+                            invokeMap.set(rootDirName, true);
+                        }
                     }
                     else {
                         callbacks.forEach(({ callback }) => callback(fileName!));
@@ -566,7 +580,7 @@ namespace ts {
             const parentWatcher = cache.get(dirPath);
             if (parentWatcher && host.directoryExists(dirName)) {
                 // Schedule the update and postpone invoke for callbacks
-                scheduleUpdateChildWatches(dirName, dirPath, options);
+                scheduleUpdateChildWatches(dirName, dirPath, fileName, options);
                 return;
             }
 
@@ -575,9 +589,13 @@ namespace ts {
             removeChildWatches(parentWatcher);
         }
 
-        function scheduleUpdateChildWatches(dirName: string, dirPath: Path, options: WatchOptions | undefined) {
-            if (!cacheToUpdateChildWatches.has(dirPath)) {
-                cacheToUpdateChildWatches.set(dirPath, { dirName, options });
+        function scheduleUpdateChildWatches(dirName: string, dirPath: Path, fileName: string, options: WatchOptions | undefined) {
+            const existing = cacheToUpdateChildWatches.get(dirPath);
+            if (existing) {
+                existing.fileNames.push(fileName);
+            }
+            else {
+                cacheToUpdateChildWatches.set(dirPath, { dirName, options, fileNames: [fileName] });
             }
             if (timerToUpdateChildWatches) {
                 host.clearTimeout(timerToUpdateChildWatches);
@@ -590,22 +608,30 @@ namespace ts {
             timerToUpdateChildWatches = undefined;
             sysLog(`sysLog:: onTimerToUpdateChildWatches:: ${cacheToUpdateChildWatches.size}`);
             const start = timestamp();
-            const invokeMap = createMap<true>();
+            const invokeMap = new Map<Path, string[]>();
 
             while (!timerToUpdateChildWatches && cacheToUpdateChildWatches.size) {
-                const { value: [dirPath, { dirName, options }], done } = cacheToUpdateChildWatches.entries().next();
+                const { value: [dirPath, { dirName, options, fileNames }], done } = cacheToUpdateChildWatches.entries().next();
                 Debug.assert(!done);
                 cacheToUpdateChildWatches.delete(dirPath);
                 // Because the child refresh is fresh, we would need to invalidate whole root directory being watched
                 // to ensure that all the changes are reflected at this time
-                invokeCallbacks(dirPath as Path, invokeMap);
-                updateChildWatches(dirName, dirPath as Path, options);
+                const hasChanges = updateChildWatches(dirName, dirPath, options);
+                invokeCallbacks(dirPath, invokeMap, hasChanges ? undefined : fileNames);
             }
 
             sysLog(`sysLog:: invokingWatchers:: ${timestamp() - start}ms:: ${cacheToUpdateChildWatches.size}`);
             callbackCache.forEach((callbacks, rootDirName) => {
-                if (invokeMap.has(rootDirName)) {
-                    callbacks.forEach(({ callback, dirName }) => callback(dirName));
+                const existing = invokeMap.get(rootDirName);
+                if (existing) {
+                    callbacks.forEach(({ callback, dirName }) => {
+                        if (isArray(existing)) {
+                            existing.forEach(callback);
+                        }
+                        else {
+                            callback(dirName);
+                        }
+                    });
                 }
             });
 
@@ -623,34 +649,26 @@ namespace ts {
             }
         }
 
-        function updateChildWatches(dirName: string, dirPath: Path, options: WatchOptions | undefined) {
+        function updateChildWatches(parentDir: string, parentDirPath: Path, options: WatchOptions | undefined) {
             // Iterate through existing children and update the watches if needed
-            const parentWatcher = cache.get(dirPath);
-            if (parentWatcher) {
-                parentWatcher.childWatches = watchChildDirectories(dirName, parentWatcher.childWatches, options);
-            }
-        }
-
-        /**
-         * Watch the directories in the parentDir
-         */
-        function watchChildDirectories(parentDir: string, existingChildWatches: ChildWatches, options: WatchOptions | undefined): ChildWatches {
+            const parentWatcher = cache.get(parentDirPath);
+            if (!parentWatcher) return false;
             let newChildWatches: ChildDirectoryWatcher[] | undefined;
-            enumerateInsertsAndDeletes<string, ChildDirectoryWatcher>(
+            const hasChanges = enumerateInsertsAndDeletes<string, ChildDirectoryWatcher>(
                 host.directoryExists(parentDir) ? mapDefined(host.getAccessibleSortedChildDirectories(parentDir), child => {
                     const childFullName = getNormalizedAbsolutePath(child, parentDir);
                     // Filter our the symbolic link directories since those arent included in recursive watch
                     // which is same behaviour when recursive: true is passed to fs.watch
                     return !isIgnoredPath(childFullName) && filePathComparer(childFullName, normalizePath(host.realpath(childFullName))) === Comparison.EqualTo ? childFullName : undefined;
                 }) : emptyArray,
-                existingChildWatches,
+                parentWatcher.childWatches,
                 (child, childWatcher) => filePathComparer(child, childWatcher.dirName),
                 createAndAddChildDirectoryWatcher,
                 closeFileWatcher,
                 addChildDirectoryWatcher
             );
-
-            return newChildWatches || emptyArray;
+            parentWatcher.childWatches = newChildWatches || emptyArray;
+            return hasChanges;
 
             /**
              * Create new childDirectoryWatcher and add it to the new ChildDirectoryWatcher list
@@ -772,7 +790,7 @@ namespace ts {
 
         function watchFile(fileName: string, callback: FileWatcherCallback, pollingInterval: PollingInterval, options: WatchOptions | undefined): FileWatcher {
             options = updateOptionsForWatchFile(options, useNonPollingWatchers);
-            const watchFileKind = Debug.assertDefined(options.watchFile);
+            const watchFileKind = Debug.checkDefined(options.watchFile);
             switch (watchFileKind) {
                 case WatchFileKind.FixedPollingInterval:
                     return pollingWatchFile(fileName, callback, PollingInterval.Low, /*options*/ undefined);
@@ -874,7 +892,7 @@ namespace ts {
         function nonRecursiveWatchDirectory(directoryName: string, callback: DirectoryWatcherCallback, recursive: boolean, options: WatchOptions | undefined): FileWatcher {
             Debug.assert(!recursive);
             options = updateOptionsForWatchDirectory(options);
-            const watchDirectoryKind = Debug.assertDefined(options.watchDirectory);
+            const watchDirectoryKind = Debug.checkDefined(options.watchDirectory);
             switch (watchDirectoryKind) {
                 case WatchDirectoryKind.FixedPollingInterval:
                     return pollingWatchFile(
@@ -1004,14 +1022,14 @@ namespace ts {
         writeFloatBE(value: number, offset: number): number;
         writeDoubleLE(value: number, offset: number): number;
         writeDoubleBE(value: number, offset: number): number;
-        readBigUInt64BE(offset?: number): bigint;
-        readBigUInt64LE(offset?: number): bigint;
-        readBigInt64BE(offset?: number): bigint;
-        readBigInt64LE(offset?: number): bigint;
-        writeBigInt64BE(value: bigint, offset?: number): number;
-        writeBigInt64LE(value: bigint, offset?: number): number;
-        writeBigUInt64BE(value: bigint, offset?: number): number;
-        writeBigUInt64LE(value: bigint, offset?: number): number;
+        readBigUInt64BE?(offset?: number): bigint;
+        readBigUInt64LE?(offset?: number): bigint;
+        readBigInt64BE?(offset?: number): bigint;
+        readBigInt64LE?(offset?: number): bigint;
+        writeBigInt64BE?(value: bigint, offset?: number): number;
+        writeBigInt64LE?(value: bigint, offset?: number): number;
+        writeBigUInt64BE?(value: bigint, offset?: number): number;
+        writeBigUInt64LE?(value: bigint, offset?: number): number;
         fill(value: string | Uint8Array | number, offset?: number, end?: number, encoding?: BufferEncoding): this;
         indexOf(value: string | number | Uint8Array, byteOffset?: number, encoding?: BufferEncoding): number;
         lastIndexOf(value: string | number | Uint8Array, byteOffset?: number, encoding?: BufferEncoding): number;
@@ -1106,31 +1124,6 @@ namespace ts {
         }
         return parseInt(version.substring(1, dot));
     }
-
-    declare const ChakraHost: {
-        args: string[];
-        currentDirectory: string;
-        executingFile: string;
-        newLine?: string;
-        useCaseSensitiveFileNames?: boolean;
-        echo(s: string): void;
-        quit(exitCode?: number): void;
-        fileExists(path: string): boolean;
-        deleteFile(path: string): boolean;
-        getModifiedTime(path: string): Date;
-        setModifiedTime(path: string, time: Date): void;
-        directoryExists(path: string): boolean;
-        createDirectory(path: string): void;
-        resolvePath(path: string): string;
-        readFile(path: string): string | undefined;
-        writeFile(path: string, contents: string): void;
-        getDirectories(path: string): string[];
-        readDirectory(path: string, extensions?: readonly string[], basePaths?: readonly string[], excludeEx?: string, includeFileEx?: string, includeDirEx?: string): string[];
-        watchFile?(path: string, callback: FileWatcherCallback): FileWatcher;
-        watchDirectory?(path: string, callback: DirectoryWatcherCallback, recursive?: boolean): FileWatcher;
-        realpath(path: string): string;
-        getEnvironmentVariable?(name: string): string;
-    };
 
     // TODO: GH#18217 this is used as if it's certainly defined in many places.
     // eslint-disable-next-line prefer-const
@@ -1256,7 +1249,7 @@ namespace ts {
                 enableCPUProfiler,
                 disableCPUProfiler,
                 realpath,
-                debugMode: some(<string[]>process.execArgv, arg => /^--(inspect|debug)(-brk)?(=\d+)?$/i.test(arg)),
+                debugMode: !!process.env.NODE_INSPECTOR_IPC || !!process.env.VSCODE_INSPECTOR_OPTIONS || some(<string[]>process.execArgv, arg => /^--(inspect|debug)(-brk)?(=\d+)?$/i.test(arg)),
                 tryEnableSourceMapsForHost() {
                     try {
                         require("source-map-support").install();
@@ -1323,7 +1316,7 @@ namespace ts {
              */
             function cleanupPaths(profile: import("inspector").Profiler.Profile) {
                 let externalFileCounter = 0;
-                const remappedPaths = createMap<string>();
+                const remappedPaths = new Map<string, string>();
                 const normalizedDir = normalizeSlashes(__dirname);
                 // Windows rooted dir names need an extra `/` prepended to be valid file:/// urls
                 const fileUrlRoot = `file://${getRootLength(normalizedDir) === 1 ? "" : "/"}${normalizedDir}`;
@@ -1564,10 +1557,13 @@ namespace ts {
             }
 
             function readFileWorker(fileName: string, _encoding?: string): string | undefined {
-                if (!fileExists(fileName)) {
+                let buffer: Buffer;
+                try {
+                    buffer = _fs.readFileSync(fileName);
+                }
+                catch (e) {
                     return undefined;
                 }
-                const buffer = _fs.readFileSync(fileName);
                 let len = buffer.length;
                 if (len >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) {
                     // Big endian UTF-16 byte order mark detected. Since big endian is not supported by node.js,
@@ -1622,23 +1618,32 @@ namespace ts {
             function getAccessibleFileSystemEntries(path: string): FileSystemEntries {
                 perfLogger.logEvent("ReadDir: " + (path || "."));
                 try {
-                    const entries = _fs.readdirSync(path || ".").sort();
+                    const entries = _fs.readdirSync(path || ".", { withFileTypes: true });
                     const files: string[] = [];
                     const directories: string[] = [];
-                    for (const entry of entries) {
+                    for (const dirent of entries) {
+                        // withFileTypes is not supported before Node 10.10.
+                        const entry = typeof dirent === "string" ? dirent : dirent.name;
+
                         // This is necessary because on some file system node fails to exclude
                         // "." and "..". See https://github.com/nodejs/node/issues/4002
                         if (entry === "." || entry === "..") {
                             continue;
                         }
-                        const name = combinePaths(path, entry);
 
                         let stat: any;
-                        try {
-                            stat = _fs.statSync(name);
+                        if (typeof dirent === "string" || dirent.isSymbolicLink()) {
+                            const name = combinePaths(path, entry);
+
+                            try {
+                                stat = _fs.statSync(name);
+                            }
+                            catch (e) {
+                                continue;
+                            }
                         }
-                        catch (e) {
-                            continue;
+                        else {
+                            stat = dirent;
                         }
 
                         if (stat.isFile()) {
@@ -1648,6 +1653,8 @@ namespace ts {
                             directories.push(entry);
                         }
                     }
+                    files.sort();
+                    directories.sort();
                     return { files, directories };
                 }
                 catch (e) {
@@ -1682,8 +1689,7 @@ namespace ts {
             }
 
             function getDirectories(path: string): string[] {
-                perfLogger.logEvent("ReadDir: " + path);
-                return filter<string>(_fs.readdirSync(path), dir => fileSystemEntryExists(combinePaths(path, dir), FileSystemEntryKind.Directory));
+                return getAccessibleFileSystemEntries(path).directories.slice();
             }
 
             function realpath(path: string): string {
@@ -1729,50 +1735,8 @@ namespace ts {
             }
         }
 
-        function getChakraSystem(): System {
-            const realpath = ChakraHost.realpath && ((path: string) => ChakraHost.realpath(path));
-            return {
-                newLine: ChakraHost.newLine || "\r\n",
-                args: ChakraHost.args,
-                useCaseSensitiveFileNames: !!ChakraHost.useCaseSensitiveFileNames,
-                write: ChakraHost.echo,
-                readFile(path: string, _encoding?: string) {
-                    // encoding is automatically handled by the implementation in ChakraHost
-                    return ChakraHost.readFile(path);
-                },
-                writeFile(path: string, data: string, writeByteOrderMark?: boolean) {
-                    // If a BOM is required, emit one
-                    if (writeByteOrderMark) {
-                        data = byteOrderMarkIndicator + data;
-                    }
-
-                    ChakraHost.writeFile(path, data);
-                },
-                resolvePath: ChakraHost.resolvePath,
-                fileExists: ChakraHost.fileExists,
-                deleteFile: ChakraHost.deleteFile,
-                getModifiedTime: ChakraHost.getModifiedTime,
-                setModifiedTime: ChakraHost.setModifiedTime,
-                directoryExists: ChakraHost.directoryExists,
-                createDirectory: ChakraHost.createDirectory,
-                getExecutingFilePath: () => ChakraHost.executingFile,
-                getCurrentDirectory: () => ChakraHost.currentDirectory,
-                getDirectories: ChakraHost.getDirectories,
-                getEnvironmentVariable: ChakraHost.getEnvironmentVariable || (() => ""),
-                readDirectory(path, extensions, excludes, includes, _depth) {
-                    const pattern = getFileMatcherPatterns(path, excludes, includes, !!ChakraHost.useCaseSensitiveFileNames, ChakraHost.currentDirectory);
-                    return ChakraHost.readDirectory(path, extensions, pattern.basePaths, pattern.excludePattern, pattern.includeFilePattern, pattern.includeDirectoryPattern);
-                },
-                exit: ChakraHost.quit,
-                realpath
-            };
-        }
-
         let sys: System | undefined;
-        if (typeof ChakraHost !== "undefined") {
-            sys = getChakraSystem();
-        }
-        else if (typeof process !== "undefined" && process.nextTick && !process.browser && typeof require !== "undefined") {
+        if (typeof process !== "undefined" && process.nextTick && !process.browser && typeof require !== "undefined") {
             // process and process.nextTick checks if current environment is node-like
             // process.browser check excludes webpack and browserify
             sys = getNodeSystem();
@@ -1786,9 +1750,9 @@ namespace ts {
 
     if (sys && sys.getEnvironmentVariable) {
         setCustomPollingValues(sys);
-        Debug.currentAssertionLevel = /^development$/i.test(sys.getEnvironmentVariable("NODE_ENV"))
+        Debug.setAssertionLevel(/^development$/i.test(sys.getEnvironmentVariable("NODE_ENV"))
             ? AssertionLevel.Normal
-            : AssertionLevel.None;
+            : AssertionLevel.None);
     }
     if (sys && sys.debugMode) {
         Debug.isDebugging = true;

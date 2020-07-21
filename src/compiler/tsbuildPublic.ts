@@ -16,6 +16,7 @@ namespace ts {
         /*@internal*/ listFiles?: boolean;
         /*@internal*/ pretty?: boolean;
         incremental?: boolean;
+        assumeChangesOnlyAffectDirectDependencies?: boolean;
 
         traceResolution?: boolean;
         /* @internal */ diagnostics?: boolean;
@@ -50,24 +51,8 @@ namespace ts {
 
     /*@internal*/
     export type ResolvedConfigFilePath = ResolvedConfigFileName & Path;
-    interface FileMap<T, U extends Path = Path> extends Map<T> {
-        get(key: U): T | undefined;
-        has(key: U): boolean;
-        forEach(action: (value: T, key: U) => void): void;
-        readonly size: number;
-        keys(): Iterator<U>;
-        values(): Iterator<T>;
-        entries(): Iterator<[U, T]>;
-        set(key: U, value: T): this;
-        delete(key: U): boolean;
-        clear(): void;
-    }
-    type ConfigFileMap<T> = FileMap<T, ResolvedConfigFilePath>;
-    function createConfigFileMap<T>(): ConfigFileMap<T> {
-        return createMap() as ConfigFileMap<T>;
-    }
 
-    function getOrCreateValueFromConfigFileMap<T>(configFileMap: ConfigFileMap<T>, resolved: ResolvedConfigFilePath, createT: () => T): T {
+    function getOrCreateValueFromConfigFileMap<T>(configFileMap: ESMap<ResolvedConfigFilePath, T>, resolved: ResolvedConfigFilePath, createT: () => T): T {
         const existingValue = configFileMap.get(resolved);
         let newValue: T | undefined;
         if (!existingValue) {
@@ -77,8 +62,8 @@ namespace ts {
         return existingValue || newValue!;
     }
 
-    function getOrCreateValueMapFromConfigFileMap<T>(configFileMap: ConfigFileMap<Map<T>>, resolved: ResolvedConfigFilePath): Map<T> {
-        return getOrCreateValueFromConfigFileMap<Map<T>>(configFileMap, resolved, createMap);
+    function getOrCreateValueMapFromConfigFileMap<T>(configFileMap: ESMap<ResolvedConfigFilePath, ESMap<string, T>>, resolved: ResolvedConfigFilePath): ESMap<string, T> {
+        return getOrCreateValueFromConfigFileMap<ESMap<string, T>>(configFileMap, resolved, () => new Map());
     }
 
     function newer(date1: Date, date2: Date): Date {
@@ -237,17 +222,17 @@ namespace ts {
         readonly rootNames: readonly string[];
         readonly baseWatchOptions: WatchOptions | undefined;
 
-        readonly resolvedConfigFilePaths: Map<ResolvedConfigFilePath>;
-        readonly configFileCache: ConfigFileMap<ConfigFileCacheEntry>;
+        readonly resolvedConfigFilePaths: ESMap<string, ResolvedConfigFilePath>;
+        readonly configFileCache: ESMap<ResolvedConfigFilePath, ConfigFileCacheEntry>;
         /** Map from config file name to up-to-date status */
-        readonly projectStatus: ConfigFileMap<UpToDateStatus>;
-        readonly buildInfoChecked: ConfigFileMap<true>;
-        readonly extendedConfigCache: Map<ExtendedConfigCacheEntry>;
+        readonly projectStatus: ESMap<ResolvedConfigFilePath, UpToDateStatus>;
+        readonly buildInfoChecked: ESMap<ResolvedConfigFilePath, true>;
+        readonly extendedConfigCache: ESMap<string, ExtendedConfigCacheEntry>;
 
-        readonly builderPrograms: ConfigFileMap<T>;
-        readonly diagnostics: ConfigFileMap<readonly Diagnostic[]>;
-        readonly projectPendingBuild: ConfigFileMap<ConfigFileProgramReloadLevel>;
-        readonly projectErrorsReported: ConfigFileMap<true>;
+        readonly builderPrograms: ESMap<ResolvedConfigFilePath, T>;
+        readonly diagnostics: ESMap<ResolvedConfigFilePath, readonly Diagnostic[]>;
+        readonly projectPendingBuild: ESMap<ResolvedConfigFilePath, ConfigFileProgramReloadLevel>;
+        readonly projectErrorsReported: ESMap<ResolvedConfigFilePath, true>;
 
         readonly compilerHost: CompilerHost;
         readonly moduleResolutionCache: ModuleResolutionCache | undefined;
@@ -264,9 +249,9 @@ namespace ts {
 
         // Watch state
         readonly watch: boolean;
-        readonly allWatchedWildcardDirectories: ConfigFileMap<Map<WildcardDirectoryWatcher>>;
-        readonly allWatchedInputFiles: ConfigFileMap<Map<FileWatcher>>;
-        readonly allWatchedConfigFiles: ConfigFileMap<FileWatcher>;
+        readonly allWatchedWildcardDirectories: ESMap<ResolvedConfigFilePath, ESMap<string, WildcardDirectoryWatcher>>;
+        readonly allWatchedInputFiles: ESMap<ResolvedConfigFilePath, ESMap<Path, FileWatcher>>;
+        readonly allWatchedConfigFiles: ESMap<ResolvedConfigFilePath, FileWatcher>;
 
         timerToBuildInvalidatedProject: any;
         reportFileChangeDetected: boolean;
@@ -293,7 +278,7 @@ namespace ts {
         if (!compilerHost.resolveModuleNames) {
             const loader = (moduleName: string, containingFile: string, redirectedReference: ResolvedProjectReference | undefined) => resolveModuleName(moduleName, containingFile, state.projectCompilerOptions, compilerHost, moduleResolutionCache, redirectedReference).resolvedModule!;
             compilerHost.resolveModuleNames = (moduleNames, containingFile, _reusedNames, redirectedReference) =>
-                loadWithLocalCache<ResolvedModuleFull>(Debug.assertEachDefined(moduleNames), containingFile, redirectedReference, loader);
+                loadWithLocalCache<ResolvedModuleFull>(Debug.checkEachDefined(moduleNames), containingFile, redirectedReference, loader);
         }
 
         const { watchFile, watchFilePath, watchDirectory, writeLog } = createWatchFactory<ResolvedConfigFileName>(hostWithWatch, options);
@@ -312,16 +297,16 @@ namespace ts {
             rootNames,
             baseWatchOptions,
 
-            resolvedConfigFilePaths: createMap(),
-            configFileCache: createConfigFileMap(),
-            projectStatus: createConfigFileMap(),
-            buildInfoChecked: createConfigFileMap(),
-            extendedConfigCache: createMap(),
+            resolvedConfigFilePaths: new Map(),
+            configFileCache: new Map(),
+            projectStatus: new Map(),
+            buildInfoChecked: new Map(),
+            extendedConfigCache: new Map(),
 
-            builderPrograms: createConfigFileMap(),
-            diagnostics: createConfigFileMap(),
-            projectPendingBuild: createConfigFileMap(),
-            projectErrorsReported: createConfigFileMap(),
+            builderPrograms: new Map(),
+            diagnostics: new Map(),
+            projectPendingBuild: new Map(),
+            projectErrorsReported: new Map(),
 
             compilerHost,
             moduleResolutionCache,
@@ -338,9 +323,9 @@ namespace ts {
 
             // Watch state
             watch,
-            allWatchedWildcardDirectories: createConfigFileMap(),
-            allWatchedInputFiles: createConfigFileMap(),
-            allWatchedConfigFiles: createConfigFileMap(),
+            allWatchedWildcardDirectories: new Map(),
+            allWatchedInputFiles: new Map(),
+            allWatchedConfigFiles: new Map(),
 
             timerToBuildInvalidatedProject: undefined,
             reportFileChangeDetected: false,
@@ -399,8 +384,8 @@ namespace ts {
     }
 
     function createBuildOrder(state: SolutionBuilderState, roots: readonly ResolvedConfigFileName[]): AnyBuildOrder {
-        const temporaryMarks = createMap() as ConfigFileMap<true>;
-        const permanentMarks = createMap() as ConfigFileMap<true>;
+        const temporaryMarks = new Map<ResolvedConfigFilePath, true>();
+        const permanentMarks = new Map<ResolvedConfigFilePath, true>();
         const circularityReportStack: string[] = [];
         let buildOrder: ResolvedConfigFileName[] | undefined;
         let circularDiagnostics: Diagnostic[] | undefined;
@@ -454,10 +439,12 @@ namespace ts {
 
         // Clear all to ResolvedConfigFilePaths cache to start fresh
         state.resolvedConfigFilePaths.clear();
-        const currentProjects = arrayToSet(
-            getBuildOrderFromAnyBuildOrder(buildOrder),
-            resolved => toResolvedConfigFilePath(state, resolved)
-        ) as ConfigFileMap<true>;
+
+        // TODO(rbuckton): Should be a `Set`, but that requires changing the code below that uses `mutateMapSkippingNewValues`
+        const currentProjects = new Map(
+            getBuildOrderFromAnyBuildOrder(buildOrder).map(
+                resolved => [toResolvedConfigFilePath(state, resolved), true as true])
+        );
 
         const noopOnDelete = { onDeleteValue: noop };
         // Config file cache
@@ -698,6 +685,18 @@ namespace ts {
         };
     }
 
+    enum BuildStep {
+        CreateProgram,
+        SyntaxDiagnostics,
+        SemanticDiagnostics,
+        Emit,
+        EmitBundle,
+        EmitBuildInfo,
+        BuildInvalidatedProjectOfBundle,
+        QueueReferencingProjects,
+        Done
+    }
+
     function createBuildOrUpdateInvalidedProject<T extends BuilderProgram>(
         kind: InvalidatedProjectKind.Build | InvalidatedProjectKind.UpdateBundle,
         state: SolutionBuilderState<T>,
@@ -707,18 +706,7 @@ namespace ts {
         config: ParsedCommandLine,
         buildOrder: readonly ResolvedConfigFileName[],
     ): BuildInvalidedProject<T> | UpdateBundleProject<T> {
-        enum Step {
-            CreateProgram,
-            SyntaxDiagnostics,
-            SemanticDiagnostics,
-            Emit,
-            EmitBundle,
-            BuildInvalidatedProjectOfBundle,
-            QueueReferencingProjects,
-            Done
-        }
-
-        let step = kind === InvalidatedProjectKind.Build ? Step.CreateProgram : Step.EmitBundle;
+        let step = kind === InvalidatedProjectKind.Build ? BuildStep.CreateProgram : BuildStep.EmitBundle;
         let program: T | undefined;
         let buildResult: BuildResultFlags | undefined;
         let invalidatedProjectOfBundle: BuildInvalidedProject<T> | undefined;
@@ -780,8 +768,11 @@ namespace ts {
                             program => program.emit(targetSourceFile, writeFile, cancellationToken, emitOnlyDtsFiles, customTransformers)
                         );
                     }
-                    executeSteps(Step.SemanticDiagnostics, cancellationToken);
-                    if (step !== Step.Emit) return undefined;
+                    executeSteps(BuildStep.SemanticDiagnostics, cancellationToken);
+                    if (step === BuildStep.EmitBuildInfo) {
+                        return emitBuildInfo(writeFile, cancellationToken);
+                    }
+                    if (step !== BuildStep.Emit) return undefined;
                     return emit(writeFile, cancellationToken, customTransformers);
                 },
                 done
@@ -794,19 +785,19 @@ namespace ts {
                 getCompilerOptions: () => config.options,
                 getCurrentDirectory: () => state.currentDirectory,
                 emit: (writeFile: WriteFileCallback | undefined, customTransformers: CustomTransformers | undefined) => {
-                    if (step !== Step.EmitBundle) return invalidatedProjectOfBundle;
+                    if (step !== BuildStep.EmitBundle) return invalidatedProjectOfBundle;
                     return emitBundle(writeFile, customTransformers);
                 },
                 done,
             };
 
         function done(cancellationToken?: CancellationToken, writeFile?: WriteFileCallback, customTransformers?: CustomTransformers) {
-            executeSteps(Step.Done, cancellationToken, writeFile, customTransformers);
+            executeSteps(BuildStep.Done, cancellationToken, writeFile, customTransformers);
             return doneInvalidatedProject(state, projectPath);
         }
 
         function withProgramOrUndefined<U>(action: (program: T) => U | undefined): U | undefined {
-            executeSteps(Step.CreateProgram);
+            executeSteps(BuildStep.CreateProgram);
             return program && action(program);
         }
 
@@ -820,17 +811,17 @@ namespace ts {
             if (state.options.dry) {
                 reportStatus(state, Diagnostics.A_non_dry_build_would_build_project_0, project);
                 buildResult = BuildResultFlags.Success;
-                step = Step.QueueReferencingProjects;
+                step = BuildStep.QueueReferencingProjects;
                 return;
             }
 
             if (state.options.verbose) reportStatus(state, Diagnostics.Building_project_0, project);
 
             if (config.fileNames.length === 0) {
-                reportAndStoreErrors(state, projectPath, config.errors);
+                reportAndStoreErrors(state, projectPath, getConfigFileParsingDiagnostics(config));
                 // Nothing to build - must be a solution file, basically
                 buildResult = BuildResultFlags.None;
-                step = Step.QueueReferencingProjects;
+                step = BuildStep.QueueReferencingProjects;
                 return;
             }
 
@@ -845,15 +836,18 @@ namespace ts {
                 config.options,
                 compilerHost,
                 getOldProgram(state, projectPath, config),
-                config.errors,
+                getConfigFileParsingDiagnostics(config),
                 config.projectReferences
             );
+            if (state.watch) {
+                state.builderPrograms.set(projectPath, program);
+            }
             step++;
         }
 
         function handleDiagnostics(diagnostics: readonly Diagnostic[], errorFlags: BuildResultFlags, errorType: string) {
             if (diagnostics.length) {
-                buildResult = buildErrors(
+                ({ buildResult, step } = buildErrors(
                     state,
                     projectPath,
                     program,
@@ -861,8 +855,7 @@ namespace ts {
                     diagnostics,
                     errorFlags,
                     errorType
-                );
-                step = Step.QueueReferencingProjects;
+                ));
             }
             else {
                 step++;
@@ -870,13 +863,13 @@ namespace ts {
         }
 
         function getSyntaxDiagnostics(cancellationToken?: CancellationToken) {
-            Debug.assertDefined(program);
+            Debug.assertIsDefined(program);
             handleDiagnostics(
                 [
-                    ...program!.getConfigFileParsingDiagnostics(),
-                    ...program!.getOptionsDiagnostics(cancellationToken),
-                    ...program!.getGlobalDiagnostics(cancellationToken),
-                    ...program!.getSyntacticDiagnostics(/*sourceFile*/ undefined, cancellationToken)
+                    ...program.getConfigFileParsingDiagnostics(),
+                    ...program.getOptionsDiagnostics(cancellationToken),
+                    ...program.getGlobalDiagnostics(cancellationToken),
+                    ...program.getSyntacticDiagnostics(/*sourceFile*/ undefined, cancellationToken)
                 ],
                 BuildResultFlags.SyntaxErrors,
                 "Syntactic"
@@ -885,22 +878,22 @@ namespace ts {
 
         function getSemanticDiagnostics(cancellationToken?: CancellationToken) {
             handleDiagnostics(
-                Debug.assertDefined(program).getSemanticDiagnostics(/*sourceFile*/ undefined, cancellationToken),
+                Debug.checkDefined(program).getSemanticDiagnostics(/*sourceFile*/ undefined, cancellationToken),
                 BuildResultFlags.TypeErrors,
                 "Semantic"
             );
         }
 
         function emit(writeFileCallback?: WriteFileCallback, cancellationToken?: CancellationToken, customTransformers?: CustomTransformers): EmitResult {
-            Debug.assertDefined(program);
-            Debug.assert(step === Step.Emit);
+            Debug.assertIsDefined(program);
+            Debug.assert(step === BuildStep.Emit);
             // Before emitting lets backup state, so we can revert it back if there are declaration errors to handle emit and declaration errors correctly
-            program!.backupState();
+            program.backupState();
             let declDiagnostics: Diagnostic[] | undefined;
             const reportDeclarationDiagnostics = (d: Diagnostic) => (declDiagnostics || (declDiagnostics = [])).push(d);
             const outputFiles: OutputFile[] = [];
             const { emitResult } = emitFilesAndReportErrors(
-                program!,
+                program,
                 reportDeclarationDiagnostics,
                 /*writeFileName*/ undefined,
                 /*reportSummary*/ undefined,
@@ -911,8 +904,8 @@ namespace ts {
             );
             // Don't emit .d.ts if there are decl file errors
             if (declDiagnostics) {
-                program!.restoreState();
-                buildResult = buildErrors(
+                program.restoreState();
+                ({ buildResult, step } = buildErrors(
                     state,
                     projectPath,
                     program,
@@ -920,8 +913,7 @@ namespace ts {
                     declDiagnostics,
                     BuildResultFlags.DeclarationEmitErrors,
                     "Declaration file"
-                );
-                step = Step.QueueReferencingProjects;
+                ));
                 return {
                     emitSkipped: true,
                     diagnostics: emitResult.diagnostics
@@ -934,7 +926,7 @@ namespace ts {
             let newestDeclarationFileContentChangedTime = minimumDate;
             let anyDtsChanged = false;
             const emitterDiagnostics = createDiagnosticCollection();
-            const emittedOutputs = createMap() as FileMap<string>;
+            const emittedOutputs = new Map<Path, string>();
             outputFiles.forEach(({ name, text, writeByteOrderMark }) => {
                 let priorChangeTime: Date | undefined;
                 if (!anyDtsChanged && isDeclarationFile(name)) {
@@ -966,9 +958,27 @@ namespace ts {
             return emitResult;
         }
 
+        function emitBuildInfo(writeFileCallback?: WriteFileCallback, cancellationToken?: CancellationToken): EmitResult {
+            Debug.assertIsDefined(program);
+            Debug.assert(step === BuildStep.EmitBuildInfo);
+            const emitResult = program.emitBuildInfo(writeFileCallback, cancellationToken);
+            if (emitResult.diagnostics.length) {
+                reportErrors(state, emitResult.diagnostics);
+                state.diagnostics.set(projectPath, [...state.diagnostics.get(projectPath)!, ...emitResult.diagnostics]);
+                buildResult = BuildResultFlags.EmitErrors & buildResult!;
+            }
+
+            if (emitResult.emittedFiles && state.writeFileName) {
+                emitResult.emittedFiles.forEach(name => listEmittedFile(state, config, name));
+            }
+            afterProgramDone(state, program, config);
+            step = BuildStep.QueueReferencingProjects;
+            return emitResult;
+        }
+
         function finishEmit(
             emitterDiagnostics: DiagnosticCollection,
-            emittedOutputs: FileMap<string>,
+            emittedOutputs: ESMap<Path, string>,
             priorNewestUpdateTime: Date,
             newestDeclarationFileContentChangedTimeIsMaximumDate: boolean,
             oldestOutputFileName: string,
@@ -976,7 +986,7 @@ namespace ts {
         ) {
             const emitDiagnostics = emitterDiagnostics.getDiagnostics();
             if (emitDiagnostics.length) {
-                buildResult = buildErrors(
+                ({ buildResult, step } = buildErrors(
                     state,
                     projectPath,
                     program,
@@ -984,14 +994,12 @@ namespace ts {
                     emitDiagnostics,
                     BuildResultFlags.EmitErrors,
                     "Emit"
-                );
-                step = Step.QueueReferencingProjects;
+                ));
                 return emitDiagnostics;
             }
 
             if (state.writeFileName) {
                 emittedOutputs.forEach(name => listEmittedFile(state, config, name));
-                if (program) listFiles(program, state.writeFileName);
             }
 
             // Update time stamps for rest of the outputs
@@ -1004,9 +1012,8 @@ namespace ts {
                     newestDeclarationFileContentChangedTime,
                 oldestOutputFileName
             });
-            afterProgramDone(state, projectPath, program, config);
-            state.projectCompilerOptions = state.baseCompilerOptions;
-            step = Step.QueueReferencingProjects;
+            afterProgramDone(state, program, config);
+            step = BuildStep.QueueReferencingProjects;
             buildResult = resultFlags;
             return emitDiagnostics;
         }
@@ -1016,7 +1023,7 @@ namespace ts {
             if (state.options.dry) {
                 reportStatus(state, Diagnostics.A_non_dry_build_would_update_output_of_project_0, project);
                 buildResult = BuildResultFlags.Success;
-                step = Step.QueueReferencingProjects;
+                step = BuildStep.QueueReferencingProjects;
                 return undefined;
             }
 
@@ -1037,7 +1044,7 @@ namespace ts {
 
             if (isString(outputFiles)) {
                 reportStatus(state, Diagnostics.Cannot_update_output_of_project_0_because_there_was_error_reading_file_1, project, relName(state, outputFiles));
-                step = Step.BuildInvalidatedProjectOfBundle;
+                step = BuildStep.BuildInvalidatedProjectOfBundle;
                 return invalidatedProjectOfBundle = createBuildOrUpdateInvalidedProject(
                     InvalidatedProjectKind.Build,
                     state,
@@ -1052,7 +1059,7 @@ namespace ts {
             // Actual Emit
             Debug.assert(!!outputFiles.length);
             const emitterDiagnostics = createDiagnosticCollection();
-            const emittedOutputs = createMap() as FileMap<string>;
+            const emittedOutputs = new Map<Path, string>();
             outputFiles.forEach(({ name, text, writeByteOrderMark }) => {
                 emittedOutputs.set(toPath(state, name), name);
                 writeFile(writeFileCallback ? { writeFile: writeFileCallback } : compilerHost, emitterDiagnostics, name, text, writeByteOrderMark);
@@ -1069,44 +1076,48 @@ namespace ts {
             return { emitSkipped: false, diagnostics: emitDiagnostics };
         }
 
-        function executeSteps(till: Step, cancellationToken?: CancellationToken, writeFile?: WriteFileCallback, customTransformers?: CustomTransformers) {
-            while (step <= till && step < Step.Done) {
+        function executeSteps(till: BuildStep, cancellationToken?: CancellationToken, writeFile?: WriteFileCallback, customTransformers?: CustomTransformers) {
+            while (step <= till && step < BuildStep.Done) {
                 const currentStep = step;
                 switch (step) {
-                    case Step.CreateProgram:
+                    case BuildStep.CreateProgram:
                         createProgram();
                         break;
 
-                    case Step.SyntaxDiagnostics:
+                    case BuildStep.SyntaxDiagnostics:
                         getSyntaxDiagnostics(cancellationToken);
                         break;
 
-                    case Step.SemanticDiagnostics:
+                    case BuildStep.SemanticDiagnostics:
                         getSemanticDiagnostics(cancellationToken);
                         break;
 
-                    case Step.Emit:
+                    case BuildStep.Emit:
                         emit(writeFile, cancellationToken, customTransformers);
                         break;
 
-                    case Step.EmitBundle:
+                    case BuildStep.EmitBuildInfo:
+                        emitBuildInfo(writeFile, cancellationToken);
+                        break;
+
+                    case BuildStep.EmitBundle:
                         emitBundle(writeFile, customTransformers);
                         break;
 
-                    case Step.BuildInvalidatedProjectOfBundle:
-                        Debug.assertDefined(invalidatedProjectOfBundle).done(cancellationToken);
-                        step = Step.Done;
+                    case BuildStep.BuildInvalidatedProjectOfBundle:
+                        Debug.checkDefined(invalidatedProjectOfBundle).done(cancellationToken);
+                        step = BuildStep.Done;
                         break;
 
-                    case Step.QueueReferencingProjects:
-                        queueReferencingProjects(state, project, projectPath, projectIndex, config, buildOrder, Debug.assertDefined(buildResult));
+                    case BuildStep.QueueReferencingProjects:
+                        queueReferencingProjects(state, project, projectPath, projectIndex, config, buildOrder, Debug.checkDefined(buildResult));
                         step++;
                         break;
 
                     // Should never be done
-                    case Step.Done:
+                    case BuildStep.Done:
                     default:
-                        assertType<Step.Done>(step);
+                        assertType<BuildStep.Done>(step);
 
                 }
                 Debug.assert(step > currentStep);
@@ -1117,7 +1128,7 @@ namespace ts {
     function needsBuild({ options }: SolutionBuilderState, status: UpToDateStatus, config: ParsedCommandLine) {
         if (status.type !== UpToDateStatusType.OutOfDateWithPrepend || options.force) return true;
         return config.fileNames.length === 0 ||
-            !!config.errors.length ||
+            !!getConfigFileParsingDiagnostics(config).length ||
             !isIncrementalCompilation(config.options);
     }
 
@@ -1162,7 +1173,7 @@ namespace ts {
             else if (reloadLevel === ConfigFileProgramReloadLevel.Partial) {
                 // Update file names
                 const result = getFileNamesFromConfigSpecs(config.configFileSpecs!, getDirectoryPath(project), config.options, state.parseConfigFileHost);
-                updateErrorForNoInputFiles(result, project, config.configFileSpecs!, config.errors, canJsonReportNoInutFiles(config.raw));
+                updateErrorForNoInputFiles(result, project, config.configFileSpecs!, config.errors, canJsonReportNoInputFiles(config.raw));
                 config.fileNames = result.fileNames;
                 watchInputFiles(state, project, projectPath, config);
             }
@@ -1171,7 +1182,7 @@ namespace ts {
             verboseReportProjectStatus(state, project, status);
             if (!options.force) {
                 if (status.type === UpToDateStatusType.UpToDate) {
-                    reportAndStoreErrors(state, projectPath, config.errors);
+                    reportAndStoreErrors(state, projectPath, getConfigFileParsingDiagnostics(config));
                     projectPendingBuild.delete(projectPath);
                     // Up to date, skip
                     if (options.dry) {
@@ -1182,7 +1193,7 @@ namespace ts {
                 }
 
                 if (status.type === UpToDateStatusType.UpToDateWithUpstreamTypes) {
-                    reportAndStoreErrors(state, projectPath, config.errors);
+                    reportAndStoreErrors(state, projectPath, getConfigFileParsingDiagnostics(config));
                     return createUpdateOutputFileStampsProject(
                         state,
                         project,
@@ -1194,7 +1205,7 @@ namespace ts {
             }
 
             if (status.type === UpToDateStatusType.UpstreamBlocked) {
-                reportAndStoreErrors(state, projectPath, config.errors);
+                reportAndStoreErrors(state, projectPath, getConfigFileParsingDiagnostics(config));
                 projectPendingBuild.delete(projectPath);
                 if (options.verbose) {
                     reportStatus(
@@ -1210,7 +1221,7 @@ namespace ts {
             }
 
             if (status.type === UpToDateStatusType.ContainerOnly) {
-                reportAndStoreErrors(state, projectPath, config.errors);
+                reportAndStoreErrors(state, projectPath, getConfigFileParsingDiagnostics(config));
                 projectPendingBuild.delete(projectPath);
                 // Do nothing
                 continue;
@@ -1246,23 +1257,21 @@ namespace ts {
     }
 
     function afterProgramDone<T extends BuilderProgram>(
-        { host, watch, builderPrograms }: SolutionBuilderState<T>,
-        proj: ResolvedConfigFilePath,
+        state: SolutionBuilderState<T>,
         program: T | undefined,
         config: ParsedCommandLine
     ) {
         if (program) {
-            if (host.afterProgramEmitAndDiagnostics) {
-                host.afterProgramEmitAndDiagnostics(program);
+            if (program && state.writeFileName) listFiles(program, state.writeFileName);
+            if (state.host.afterProgramEmitAndDiagnostics) {
+                state.host.afterProgramEmitAndDiagnostics(program);
             }
-            if (watch) {
-                program.releaseProgram();
-                builderPrograms.set(proj, program);
-            }
+            program.releaseProgram();
         }
-        else if (host.afterEmitBundle) {
-            host.afterEmitBundle(config);
+        else if (state.host.afterEmitBundle) {
+            state.host.afterEmitBundle(config);
         }
+        state.projectCompilerOptions = state.baseCompilerOptions;
     }
 
     function buildErrors<T extends BuilderProgram>(
@@ -1271,16 +1280,17 @@ namespace ts {
         program: T | undefined,
         config: ParsedCommandLine,
         diagnostics: readonly Diagnostic[],
-        errorFlags: BuildResultFlags,
-        errorType: string
+        buildResult: BuildResultFlags,
+        errorType: string,
     ) {
+        const canEmitBuildInfo = !(buildResult & BuildResultFlags.SyntaxErrors) && program && !outFile(program.getCompilerOptions());
+
         reportAndStoreErrors(state, resolvedPath, diagnostics);
         // List files if any other build error using program (emit errors already report files)
-        if (program && state.writeFileName) listFiles(program, state.writeFileName);
         state.projectStatus.set(resolvedPath, { type: UpToDateStatusType.Unbuildable, reason: `${errorType} errors` });
-        afterProgramDone(state, resolvedPath, program, config);
-        state.projectCompilerOptions = state.baseCompilerOptions;
-        return errorFlags;
+        if (canEmitBuildInfo) return { buildResult, step: BuildStep.EmitBuildInfo };
+        afterProgramDone(state, program, config);
+        return { buildResult, step: BuildStep.QueueReferencingProjects };
     }
 
     function updateModuleResolutionCache(
@@ -1347,7 +1357,7 @@ namespace ts {
         }
 
         // Container if no files are specified in the project
-        if (!project.fileNames.length && !canJsonReportNoInutFiles(project.raw)) {
+        if (!project.fileNames.length && !canJsonReportNoInputFiles(project.raw)) {
             return {
                 type: UpToDateStatusType.ContainerOnly
             };
@@ -1536,7 +1546,7 @@ namespace ts {
         return actual;
     }
 
-    function updateOutputTimestampsWorker(state: SolutionBuilderState, proj: ParsedCommandLine, priorNewestUpdateTime: Date, verboseMessage: DiagnosticMessage, skipOutputs?: FileMap<string>) {
+    function updateOutputTimestampsWorker(state: SolutionBuilderState, proj: ParsedCommandLine, priorNewestUpdateTime: Date, verboseMessage: DiagnosticMessage, skipOutputs?: ESMap<Path, string>) {
         const { host } = state;
         const outputs = getAllProjectOutputs(proj, !host.useCaseSensitiveFileNames());
         if (!skipOutputs || outputs.length !== skipOutputs.size) {
@@ -1784,57 +1794,27 @@ namespace ts {
         ));
     }
 
-    function isSameFile(state: SolutionBuilderState, file1: string, file2: string) {
-        return comparePaths(file1, file2, state.currentDirectory, !state.host.useCaseSensitiveFileNames()) === Comparison.EqualTo;
-    }
-
-    function isOutputFile(state: SolutionBuilderState, fileName: string, configFile: ParsedCommandLine) {
-        if (configFile.options.noEmit) return false;
-
-        // ts or tsx files are not output
-        if (!fileExtensionIs(fileName, Extension.Dts) &&
-            (fileExtensionIs(fileName, Extension.Ts) || fileExtensionIs(fileName, Extension.Tsx))) {
-            return false;
-        }
-
-        // If options have --outFile or --out, check if its that
-        const out = configFile.options.outFile || configFile.options.out;
-        if (out && (isSameFile(state, fileName, out) || isSameFile(state, fileName, removeFileExtension(out) + Extension.Dts))) {
-            return true;
-        }
-
-        // If declarationDir is specified, return if its a file in that directory
-        if (configFile.options.declarationDir && containsPath(configFile.options.declarationDir, fileName, state.currentDirectory, !state.host.useCaseSensitiveFileNames())) {
-            return true;
-        }
-
-        // If --outDir, check if file is in that directory
-        if (configFile.options.outDir && containsPath(configFile.options.outDir, fileName, state.currentDirectory, !state.host.useCaseSensitiveFileNames())) {
-            return true;
-        }
-
-        return !forEach(configFile.fileNames, inputFile => isSameFile(state, fileName, inputFile));
-    }
-
     function watchWildCardDirectories(state: SolutionBuilderState, resolved: ResolvedConfigFileName, resolvedPath: ResolvedConfigFilePath, parsed: ParsedCommandLine) {
         if (!state.watch) return;
         updateWatchingWildcardDirectories(
             getOrCreateValueMapFromConfigFileMap(state.allWatchedWildcardDirectories, resolvedPath),
-            createMapFromTemplate(parsed.configFileSpecs!.wildcardDirectories),
+            new Map(getEntries(parsed.configFileSpecs!.wildcardDirectories)),
             (dir, flags) => state.watchDirectory(
                 state.hostWithWatch,
                 dir,
                 fileOrDirectory => {
-                    const fileOrDirectoryPath = toPath(state, fileOrDirectory);
-                    if (fileOrDirectoryPath !== toPath(state, dir) && hasExtension(fileOrDirectoryPath) && !isSupportedSourceFileName(fileOrDirectory, parsed.options)) {
-                        state.writeLog(`Project: ${resolved} Detected file add/remove of non supported extension: ${fileOrDirectory}`);
-                        return;
-                    }
-
-                    if (isOutputFile(state, fileOrDirectory, parsed)) {
-                        state.writeLog(`${fileOrDirectory} is output file`);
-                        return;
-                    }
+                    if (isIgnoredFileFromWildCardWatching({
+                        watchedDirPath: toPath(state, dir),
+                        fileOrDirectory,
+                        fileOrDirectoryPath: toPath(state, fileOrDirectory),
+                        configFileName: resolved,
+                        configFileSpecs: parsed.configFileSpecs!,
+                        currentDirectory: state.currentDirectory,
+                        options: parsed.options,
+                        program: state.builderPrograms.get(resolvedPath),
+                        useCaseSensitiveFileNames: state.parseConfigFileHost.useCaseSensitiveFileNames,
+                        writeLog: s => state.writeLog(s)
+                    })) return;
 
                     invalidateProjectAndScheduleBuilds(state, resolvedPath, ConfigFileProgramReloadLevel.Partial);
                 },

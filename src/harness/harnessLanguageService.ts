@@ -126,7 +126,7 @@ namespace Harness.LanguageService {
 
     export abstract class LanguageServiceAdapterHost {
         public readonly sys = new fakes.System(new vfs.FileSystem(/*ignoreCase*/ true, { cwd: virtualFileSystemRoot }));
-        public typesRegistry: ts.Map<void> | undefined;
+        public typesRegistry: ts.ESMap<string, void> | undefined;
         private scriptInfos: collections.SortedMap<string, ScriptInfo>;
 
         constructor(protected cancellationToken = DefaultHostCancellationToken.instance,
@@ -520,7 +520,6 @@ namespace Harness.LanguageService {
         getNavigationTree(fileName: string): ts.NavigationTree {
             return unwrapJSONCallResult(this.shim.getNavigationTree(fileName));
         }
-
         getOutliningSpans(fileName: string): ts.OutliningSpan[] {
             return unwrapJSONCallResult(this.shim.getOutliningSpans(fileName));
         }
@@ -589,6 +588,9 @@ namespace Harness.LanguageService {
         getProgram(): ts.Program {
             throw new Error("Program can not be marshaled across the shim layer.");
         }
+        getAutoImportProvider(): ts.Program | undefined {
+            throw new Error("Program can not be marshaled across the shim layer.");
+        }
         getNonBoundSourceFile(): ts.SourceFile {
             throw new Error("SourceFile can not be marshaled across the shim layer.");
         }
@@ -597,6 +599,21 @@ namespace Harness.LanguageService {
         }
         getSourceMapper(): never {
             return ts.notImplemented();
+        }
+        clearSourceMapperCache(): never {
+            return ts.notImplemented();
+        }
+        toggleLineComment(fileName: string, textRange: ts.TextRange): ts.TextChange[] {
+            return unwrapJSONCallResult(this.shim.toggleLineComment(fileName, textRange));
+        }
+        toggleMultilineComment(fileName: string, textRange: ts.TextRange): ts.TextChange[] {
+            return unwrapJSONCallResult(this.shim.toggleMultilineComment(fileName, textRange));
+        }
+        commentSelection(fileName: string, textRange: ts.TextRange): ts.TextChange[] {
+            return unwrapJSONCallResult(this.shim.commentSelection(fileName, textRange));
+        }
+        uncommentSelection(fileName: string, textRange: ts.TextRange): ts.TextChange[] {
+            return unwrapJSONCallResult(this.shim.uncommentSelection(fileName, textRange));
         }
         dispose(): void { this.shim.dispose({}); }
     }
