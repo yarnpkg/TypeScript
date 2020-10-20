@@ -391,7 +391,8 @@ namespace ts.moduleSpecifiers {
                 parts = {
                     topLevelNodeModulesIndex: undefined,
                     topLevelPackageNameIndex: undefined,
-                    packageRootIndex: information.packageLocation.length,
+                    // The last character from packageLocation is the trailing "/", we want to point to it
+                    packageRootIndex: information.packageLocation.length - 1,
                     fileNameIndex: path.lastIndexOf(`/`),
                 };
             }
