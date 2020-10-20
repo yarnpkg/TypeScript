@@ -325,7 +325,7 @@ namespace ts.moduleSpecifiers {
 
         let packageName: string | undefined;
         if (!parts && isPnpAvailable()) {
-            const pnpApi = require(`pnpapi`) as any;
+            const pnpApi = require(`pnpapi`);
             const locator = pnpApi.findPackageLocator(moduleFileName);
             // eslint-disable-next-line no-null/no-null
             if (locator !== null) {
@@ -340,7 +340,8 @@ namespace ts.moduleSpecifiers {
                 parts = {
                     topLevelNodeModulesIndex: undefined,
                     topLevelPackageNameIndex: undefined,
-                    packageRootIndex: information.packageLocation.length,
+                    // The last character from packageLocation is the trailing "/", we want to point to it
+                    packageRootIndex: information.packageLocation.length - 1,
                     fileNameIndex: moduleFileName.lastIndexOf(`/`),
                 };
             }
