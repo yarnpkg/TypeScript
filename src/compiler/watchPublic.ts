@@ -293,6 +293,11 @@ namespace ts {
             configFileWatcher = watchFile(configFileName, scheduleProgramReload, PollingInterval.High, watchOptions, WatchType.ConfigFile);
         }
 
+        let pnpFileWatcher: FileWatcher | undefined;
+        if (typeof process.versions.pnp !== `undefined`) {
+            pnpFileWatcher = watchFile(require.resolve(`pnpapi`), scheduleResolutionReload, PollingInterval.High, watchOptions, WatchType.ConfigFile);
+        }
+
         const compilerHost = createCompilerHostFromProgramHost(host, () => compilerOptions, directoryStructureHost) as CompilerHost & ResolutionCacheHost;
         setGetSourceFileAsHashVersioned(compilerHost, host);
         // Members for CompilerHost
@@ -358,6 +363,10 @@ namespace ts {
                 configFileWatcher.close();
                 configFileWatcher = undefined;
             }
+            if (pnpFileWatcher) {
+                pnpFileWatcher.close();
+                pnpFileWatcher = undefined;
+            }
             if (extendedConfigFilesMap) {
                 clearMap(extendedConfigFilesMap, closeFileWatcher);
                 extendedConfigFilesMap = undefined!;
@@ -380,7 +389,7 @@ namespace ts {
             return builderProgram && builderProgram.getProgramOrUndefined();
         }
 
-        function synchronizeProgram() {
+        function synchronizeProgram(forceAllFilesAsInvalidated = false) {
             writeLog(`Synchronizing program`);
             clearInvalidateResolutionsOfFailedLookupLocations();
 
@@ -393,7 +402,7 @@ namespace ts {
             }
 
             // All resolutions are invalid if user provided resolutions
-            const hasInvalidatedResolution = resolutionCache.createHasInvalidatedResolution(userProvidedResolution);
+            const hasInvalidatedResolution = resolutionCache.createHasInvalidatedResolution(userProvidedResolution || forceAllFilesAsInvalidated);
             if (isProgramUptoDate(getCurrentProgram(), rootFileNames, compilerOptions, getSourceVersion, fileExists, hasInvalidatedResolution, hasChangedAutomaticTypeDirectiveNames, projectReferences)) {
                 if (hasChangedConfigFileParsingErrors) {
                     builderProgram = createProgram(/*rootNames*/ undefined, /*options*/ undefined, compilerHost, builderProgram, configFileParsingDiagnostics, projectReferences);
@@ -616,6 +625,13 @@ namespace ts {
             scheduleProgramUpdate();
         }
 
+        function scheduleResolutionReload() {
+            writeLog("Clearing resolutions");
+            resolutionCache.clear();
+            reloadLevel = ConfigFileProgramReloadLevel.Resolutions;
+            scheduleProgramUpdate();
+        }
+
         function updateProgramWithWatchStatus() {
             timerToUpdateProgram = undefined;
             reportWatchDiagnostic(Diagnostics.File_change_detected_Starting_incremental_compilation);
@@ -631,6 +647,10 @@ namespace ts {
                 case ConfigFileProgramReloadLevel.Full:
                     perfLogger.logStartUpdateProgram("FullConfigReload");
                     reloadConfigFile();
+                    break;
+                case ConfigFileProgramReloadLevel.Resolutions:
+                    perfLogger.logStartUpdateProgram("SynchronizeProgramWithResolutions");
+                    synchronizeProgram(/*forceAllFilesAsInvalidated*/ true);
                     break;
                 default:
                     perfLogger.logStartUpdateProgram("SynchronizeProgram");

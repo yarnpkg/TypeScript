@@ -256,25 +256,66 @@ namespace ts {
 
     /**
      * Returns the path to every node_modules/@types directory from some ancestor directory.
-     * Returns undefined if there are none.
      */
-    function getDefaultTypeRoots(currentDirectory: string, host: { directoryExists?: (directoryName: string) => boolean }): string[] | undefined {
+    function getNodeModulesTypeRoots(currentDirectory: string, host: { directoryExists?: (directoryName: string) => boolean }) {
         if (!host.directoryExists) {
             return [combinePaths(currentDirectory, nodeModulesAtTypes)];
             // And if it doesn't exist, tough.
         }
 
-        let typeRoots: string[] | undefined;
+        const typeRoots: string[] = [];
         forEachAncestorDirectory(normalizePath(currentDirectory), directory => {
             const atTypes = combinePaths(directory, nodeModulesAtTypes);
             if (host.directoryExists!(atTypes)) {
-                (typeRoots || (typeRoots = [])).push(atTypes);
+                typeRoots.push(atTypes);
             }
             return undefined;
         });
+
         return typeRoots;
     }
     const nodeModulesAtTypes = combinePaths("node_modules", "@types");
+
+    function getPnpTypeRoots(currentDirectory: string) {
+        if (!isPnpAvailable()) {
+            return [];
+        }
+
+        // Some TS consumers pass relative paths that aren't normalized
+        currentDirectory = sys.resolvePath(currentDirectory);
+
+        const pnpapi = getPnpApi();
+
+        const currentPackage = pnpapi.findPackageLocator(`${currentDirectory}/`);
+        if (!currentPackage) {
+            return [];
+        }
+
+        const {packageDependencies} = pnpapi.getPackageInformation(currentPackage);
+
+        const typeRoots: string[] = [];
+        for (const [name, referencish] of Array.from<any>(packageDependencies.entries())) {
+            // eslint-disable-next-line no-null/no-null
+            if (name.startsWith(typesPackagePrefix) && referencish !== null) {
+                const dependencyLocator = pnpapi.getLocator(name, referencish);
+                const {packageLocation} = pnpapi.getPackageInformation(dependencyLocator);
+
+                typeRoots.push(getDirectoryPath(packageLocation));
+            }
+        }
+
+        return typeRoots;
+    }
+    const typesPackagePrefix = "@types/";
+
+    function getDefaultTypeRoots(currentDirectory: string, host: { directoryExists?: (directoryName: string) => boolean }): string[] | undefined {
+        const nmTypes = getNodeModulesTypeRoots(currentDirectory, host);
+        const pnpTypes = getPnpTypeRoots(currentDirectory);
+
+        if (nmTypes.length > 0 || pnpTypes.length > 0) {
+            return [...nmTypes, ...pnpTypes];
+        }
+    }
 
     /**
      * @param {string | undefined} containingFile - file that contains type reference directive, can be undefined if containing file is unknown.
@@ -371,7 +412,10 @@ namespace ts {
                 }
                 let result: Resolved | undefined;
                 if (!isExternalModuleNameRelative(typeReferenceDirectiveName)) {
-                    const searchResult = loadModuleFromNearestNodeModulesDirectory(Extensions.DtsOnly, typeReferenceDirectiveName, initialLocationForSecondaryLookup, moduleResolutionState, /*cache*/ undefined, /*redirectedReference*/ undefined);
+                    const searchResult = isPnpAvailable()
+                        ? tryLoadModuleUsingPnpResolution(Extensions.DtsOnly, typeReferenceDirectiveName, initialLocationForSecondaryLookup, moduleResolutionState)
+                        : loadModuleFromNearestNodeModulesDirectory(Extensions.DtsOnly, typeReferenceDirectiveName, initialLocationForSecondaryLookup, moduleResolutionState, /*cache*/ undefined, /*redirectedReference*/ undefined);
+
                     result = searchResult && searchResult.value;
                 }
                 else {
@@ -947,8 +991,14 @@ namespace ts {
                 if (traceEnabled) {
                     trace(host, Diagnostics.Loading_module_0_from_node_modules_folder_target_file_type_1, moduleName, Extensions[extensions]);
                 }
-                const resolved = loadModuleFromNearestNodeModulesDirectory(extensions, moduleName, containingDirectory, state, cache, redirectedReference);
-                if (!resolved) return undefined;
+
+                const resolved = isPnpAvailable()
+                    ? tryLoadModuleUsingPnpResolution(extensions, moduleName, containingDirectory, state)
+                    : loadModuleFromNearestNodeModulesDirectory(extensions, moduleName, containingDirectory, state, cache, redirectedReference);
+
+                if (!resolved) {
+                    return undefined;
+                }
 
                 let resolvedValue = resolved.value;
                 if (!compilerOptions.preserveSymlinks && resolvedValue && !resolvedValue.originalPath) {
@@ -1520,5 +1570,65 @@ namespace ts {
      */
     function toSearchResult<T>(value: T | undefined): SearchResult<T> {
         return value !== undefined ? { value } : undefined;
+    }
+
+    /**
+     * We only allow PnP to be used as a resolution strategy if TypeScript
+     * itself is executed under a PnP runtime (and we only allow it to access
+     * the current PnP runtime, not any on the disk). This ensures that we
+     * don't execute potentially malicious code that didn't already have a
+     * chance to be executed (if we're running within the runtime, it means
+     * that the runtime has already been executed).
+     * @internal
+     */
+    function isPnpAvailable() {
+        return typeof process.versions.pnp !== "undefined";
+    }
+
+    function getPnpApi() {
+        return require("pnpapi");
+    }
+
+    function loadPnpPackageResolution(packageName: string, containingDirectory: string) {
+        try {
+            const resolution = getPnpApi().resolveToUnqualified(packageName, `${containingDirectory}/`, { considerBuiltins: false });
+            return normalizeSlashes(resolution);
+        }
+        catch {
+            // Nothing to do
+        }
+    }
+
+    function loadPnpTypePackageResolution(packageName: string, containingDirectory: string) {
+        return loadPnpPackageResolution(getTypesPackageName(packageName), containingDirectory);
+    }
+
+    /* @internal */
+    function tryLoadModuleUsingPnpResolution(extensions: Extensions, moduleName: string, containingDirectory: string, state: ModuleResolutionState) {
+        const {packageName, rest} = parsePackageName(moduleName);
+
+        const packageResolution = loadPnpPackageResolution(packageName, containingDirectory);
+        const packageFullResolution = packageResolution
+            ? nodeLoadModuleByRelativeName(extensions, combinePaths(packageResolution, rest), /*onlyRecordFailures*/ false, state, /*considerPackageJson*/ true)
+            : undefined;
+
+        let resolved;
+        if (packageFullResolution) {
+            resolved = packageFullResolution;
+        }
+        else if (extensions === Extensions.TypeScript || extensions === Extensions.DtsOnly) {
+            const typePackageResolution = loadPnpTypePackageResolution(packageName, containingDirectory);
+            const typePackageFullResolution = typePackageResolution
+                ? nodeLoadModuleByRelativeName(Extensions.DtsOnly, combinePaths(typePackageResolution, rest), /*onlyRecordFailures*/ false, state, /*considerPackageJson*/ true)
+                : undefined;
+
+            if (typePackageFullResolution) {
+                resolved = typePackageFullResolution;
+            }
+        }
+
+        if (resolved) {
+            return toSearchResult(resolved);
+        }
     }
 }
