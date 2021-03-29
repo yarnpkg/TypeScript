@@ -276,7 +276,7 @@ namespace ts {
     }
     const nodeModulesAtTypes = combinePaths("node_modules", "@types");
 
-    function getPnpTypeRoots(currentDirectory: string) {
+    export function getPnpTypeRoots(currentDirectory: string) {
         if (!isPnpAvailable()) {
             return [];
         }
