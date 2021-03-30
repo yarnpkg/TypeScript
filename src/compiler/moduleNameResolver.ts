@@ -277,14 +277,13 @@ namespace ts {
     const nodeModulesAtTypes = combinePaths("node_modules", "@types");
 
     export function getPnpTypeRoots(currentDirectory: string) {
-        if (!isPnpAvailable()) {
+        const pnpapi = getPnpApi(currentDirectory);
+        if (!pnpapi) {
             return [];
         }
 
         // Some TS consumers pass relative paths that aren't normalized
         currentDirectory = sys.resolvePath(currentDirectory);
-
-        const pnpapi = getPnpApi();
 
         const currentPackage = pnpapi.findPackageLocator(`${currentDirectory}/`);
         if (!currentPackage) {
@@ -412,7 +411,7 @@ namespace ts {
                 }
                 let result: Resolved | undefined;
                 if (!isExternalModuleNameRelative(typeReferenceDirectiveName)) {
-                    const searchResult = isPnpAvailable()
+                    const searchResult = getPnpApi(initialLocationForSecondaryLookup)
                         ? tryLoadModuleUsingPnpResolution(Extensions.DtsOnly, typeReferenceDirectiveName, initialLocationForSecondaryLookup, moduleResolutionState)
                         : loadModuleFromNearestNodeModulesDirectory(Extensions.DtsOnly, typeReferenceDirectiveName, initialLocationForSecondaryLookup, moduleResolutionState, /*cache*/ undefined, /*redirectedReference*/ undefined);
 
@@ -992,7 +991,7 @@ namespace ts {
                     trace(host, Diagnostics.Loading_module_0_from_node_modules_folder_target_file_type_1, moduleName, Extensions[extensions]);
                 }
 
-                const resolved = isPnpAvailable()
+                const resolved = getPnpApi(containingDirectory)
                     ? tryLoadModuleUsingPnpResolution(extensions, moduleName, containingDirectory, state)
                     : loadModuleFromNearestNodeModulesDirectory(extensions, moduleName, containingDirectory, state, cache, redirectedReference);
 
@@ -1356,7 +1355,15 @@ namespace ts {
 
     function loadModuleFromSpecificNodeModulesDirectory(extensions: Extensions, moduleName: string, nodeModulesDirectory: string, nodeModulesDirectoryExists: boolean, state: ModuleResolutionState): Resolved | undefined {
         const candidate = normalizePath(combinePaths(nodeModulesDirectory, moduleName));
+        return loadModuleFromSpecificNodeModulesDirectoryImpl(extensions, moduleName, nodeModulesDirectory, nodeModulesDirectoryExists, state, candidate, undefined, undefined);
+    }
 
+    function loadModuleFromPnpResolution(extensions: Extensions, packageDirectory: string, rest: string, state: ModuleResolutionState): Resolved | undefined {
+        const candidate = normalizePath(combinePaths(packageDirectory, rest));
+        return loadModuleFromSpecificNodeModulesDirectoryImpl(extensions, undefined, undefined, true, state, candidate, rest, packageDirectory);
+    }
+
+    function loadModuleFromSpecificNodeModulesDirectoryImpl(extensions: Extensions, moduleName: string | undefined, nodeModulesDirectory: string | undefined, nodeModulesDirectoryExists: boolean, state: ModuleResolutionState, candidate: string, rest: string | undefined, packageDirectory: string | undefined): Resolved | undefined {
         // First look for a nested package.json, as in `node_modules/foo/bar/package.json`.
         let packageInfo = getPackageJsonInfo(candidate, !nodeModulesDirectoryExists, state);
         if (packageInfo) {
@@ -1390,9 +1397,10 @@ namespace ts {
             return withPackageId(packageInfo, pathAndExtension);
         };
 
-        const { packageName, rest } = parsePackageName(moduleName);
+        let packageName: string;
+        if (rest === undefined) ({ packageName, rest } = parsePackageName(moduleName!));
         if (rest !== "") { // If "rest" is empty, we just did this search above.
-            const packageDirectory = combinePaths(nodeModulesDirectory, packageName);
+            if (packageDirectory === undefined) packageDirectory = combinePaths(nodeModulesDirectory!, packageName!);
 
             // Don't use a "types" or "main" from here because we're not loading the root, but a subdirectory -- just here for the packageId and path mappings.
             packageInfo = getPackageJsonInfo(packageDirectory, !nodeModulesDirectoryExists, state);
@@ -1581,17 +1589,17 @@ namespace ts {
      * that the runtime has already been executed).
      * @internal
      */
-    function isPnpAvailable() {
-        return typeof process.versions.pnp !== "undefined";
-    }
-
-    function getPnpApi() {
-        return require("pnpapi");
+    function getPnpApi(path: string) {
+        const {findPnpApi} = require("module");
+        if (findPnpApi === undefined) {
+            return undefined;
+        }
+        return findPnpApi(`${path}/`);
     }
 
     function loadPnpPackageResolution(packageName: string, containingDirectory: string) {
         try {
-            const resolution = getPnpApi().resolveToUnqualified(packageName, `${containingDirectory}/`, { considerBuiltins: false });
+            const resolution = getPnpApi(containingDirectory).resolveToUnqualified(packageName, `${containingDirectory}/`, { considerBuiltins: false });
             return normalizeSlashes(resolution);
         }
         catch {
@@ -1609,7 +1617,7 @@ namespace ts {
 
         const packageResolution = loadPnpPackageResolution(packageName, containingDirectory);
         const packageFullResolution = packageResolution
-            ? nodeLoadModuleByRelativeName(extensions, combinePaths(packageResolution, rest), /*onlyRecordFailures*/ false, state, /*considerPackageJson*/ true)
+            ? loadModuleFromPnpResolution(extensions, packageResolution, rest, state)
             : undefined;
 
         let resolved;
@@ -1619,7 +1627,7 @@ namespace ts {
         else if (extensions === Extensions.TypeScript || extensions === Extensions.DtsOnly) {
             const typePackageResolution = loadPnpTypePackageResolution(packageName, containingDirectory);
             const typePackageFullResolution = typePackageResolution
-                ? nodeLoadModuleByRelativeName(Extensions.DtsOnly, combinePaths(typePackageResolution, rest), /*onlyRecordFailures*/ false, state, /*considerPackageJson*/ true)
+                ? loadModuleFromPnpResolution(Extensions.DtsOnly, typePackageResolution, rest, state)
                 : undefined;
 
             if (typePackageFullResolution) {
