@@ -561,12 +561,34 @@ namespace ts.Completions.StringCompletions {
                 }
             }
             if (!foundGlobal) {
-                forEachAncestorDirectory(scriptPath, ancestor => {
-                    const nodeModules = combinePaths(ancestor, "node_modules");
-                    if (tryDirectoryExists(host, nodeModules)) {
-                        getCompletionEntriesForDirectoryFragment(fragment, nodeModules, extensionOptions, host, /*exclude*/ undefined, result);
+                const pnpapi = require("module").findPnpApi?.(scriptPath);
+
+                if (pnpapi) {
+                    // Splits a require request into its components, or return null if the request is a file path
+                    const pathRegExp = /^(?![a-zA-Z]:[\\/]|\\\\|\.{0,2}(?:\/|$))((?:@[^/]+\/)?[^/]+)\/*(.*|)$/;
+                    const dependencyNameMatch = fragment.match(pathRegExp);
+                    if (dependencyNameMatch) {
+                        const [, dependencyName, subPath] = dependencyNameMatch;
+                        let unqualified;
+                        try {
+                            unqualified = pnpapi.resolveToUnqualified(dependencyName, scriptPath, { considerBuiltins: false });
+                        }
+ catch {
+                            // It's fine if the resolution fails
+                        }
+                        if (unqualified) {
+                            getCompletionEntriesForDirectoryFragment(subPath, normalizePath(unqualified), extensionOptions, host, /*exclude*/ undefined, result);
+                        }
                     }
-                });
+                }
+ else {
+                    forEachAncestorDirectory(scriptPath, ancestor => {
+                        const nodeModules = combinePaths(ancestor, "node_modules");
+                        if (tryDirectoryExists(host, nodeModules)) {
+                            getCompletionEntriesForDirectoryFragment(fragment, nodeModules, extensionOptions, host, /*exclude*/ undefined, result);
+                        }
+                    });
+                }
             }
         }
 
@@ -698,10 +720,17 @@ namespace ts.Completions.StringCompletions {
             getCompletionEntriesFromDirectories(root);
         }
 
-        // Also get all @types typings installed in visible node_modules directories
-        for (const packageJson of findPackageJsons(scriptPath, host)) {
-            const typesDir = combinePaths(getDirectoryPath(packageJson), "node_modules/@types");
-            getCompletionEntriesFromDirectories(typesDir);
+        if (require("module").findPnpApi?.(scriptPath)) {
+            for (const root of getPnpTypeRoots(scriptPath)) {
+                getCompletionEntriesFromDirectories(root);
+            }
+        }
+ else {
+            // Also get all @types typings installed in visible node_modules directories
+            for (const packageJson of findPackageJsons(scriptPath, host)) {
+                const typesDir = combinePaths(getDirectoryPath(packageJson), "node_modules/@types");
+                getCompletionEntriesFromDirectories(typesDir);
+            }
         }
 
         return result;

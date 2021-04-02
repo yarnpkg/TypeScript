@@ -266,13 +266,47 @@ namespace ts {
      * Don't include something from a `node_modules` that isn't actually reachable by a global import.
      * A relative import to node_modules is usually a bad idea.
      */
-    function isImportablePath(fromPath: string, toPath: string, getCanonicalFileName: GetCanonicalFileName, globalCachePath?: string): boolean {
+    function isImportablePathNode(fromPath: string, toPath: string, getCanonicalFileName: GetCanonicalFileName, globalCachePath?: string): boolean {
         // If it's in a `node_modules` but is not reachable from here via a global import, don't bother.
         const toNodeModules = forEachAncestorDirectory(toPath, ancestor => getBaseFileName(ancestor) === "node_modules" ? ancestor : undefined);
         const toNodeModulesParent = toNodeModules && getDirectoryPath(getCanonicalFileName(toNodeModules));
         return toNodeModulesParent === undefined
             || startsWith(getCanonicalFileName(fromPath), toNodeModulesParent)
             || (!!globalCachePath && startsWith(getCanonicalFileName(globalCachePath), toNodeModulesParent));
+    }
+
+    function getPnpApi(path: string) {
+        const {findPnpApi} = require("module");
+        if (findPnpApi === undefined) {
+            return undefined;
+        }
+        return findPnpApi(`${path}/`);
+    }
+
+    function isImportablePathPnp(fromPath: string, toPath: string): boolean {
+        const pnpApi = getPnpApi(fromPath);
+
+        const fromLocator = pnpApi.findPackageLocator(fromPath);
+        const toLocator = pnpApi.findPackageLocator(toPath);
+
+        // eslint-disable-next-line no-null/no-null
+        if (toLocator === null) {
+            return false;
+        }
+
+        const fromInfo = pnpApi.getPackageInformation(fromLocator);
+        const toReference = fromInfo.packageDependencies.get(toLocator.name);
+
+        return toReference === toLocator.reference;
+    }
+
+    function isImportablePath(fromPath: string, toPath: string, getCanonicalFileName: GetCanonicalFileName, globalCachePath?: string): boolean {
+        if (getPnpApi(fromPath)) {
+            return isImportablePathPnp(fromPath, toPath);
+        }
+        else {
+            return isImportablePathNode(fromPath, toPath, getCanonicalFileName, globalCachePath);
+        }
     }
 
     export function forEachExternalModuleToImportFrom(
