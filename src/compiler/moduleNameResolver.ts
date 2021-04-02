@@ -1,3 +1,4 @@
+import { getPnpApi, getPnpTypeRoots } from "./pnp";
 import {
     append,
     appendIfUnique,
@@ -427,7 +428,7 @@ export function getEffectiveTypeRoots(options: CompilerOptions, host: GetEffecti
  * Returns the path to every node_modules/@types directory from some ancestor directory.
  * Returns undefined if there are none.
  */
-function getDefaultTypeRoots(currentDirectory: string, host: { directoryExists?: (directoryName: string) => boolean }): string[] | undefined {
+function getNodeModulesTypeRoots(currentDirectory: string, host: { directoryExists?: (directoryName: string) => boolean }) {
     if (!host.directoryExists) {
         return [combinePaths(currentDirectory, nodeModulesAtTypes)];
         // And if it doesn't exist, tough.
@@ -448,6 +449,18 @@ const nodeModulesAtTypes = combinePaths("node_modules", "@types");
 function arePathsEqual(path1: string, path2: string, host: ModuleResolutionHost): boolean {
     const useCaseSensitiveFileNames = typeof host.useCaseSensitiveFileNames === "function" ? host.useCaseSensitiveFileNames() : host.useCaseSensitiveFileNames;
     return comparePaths(path1, path2, !useCaseSensitiveFileNames) === Comparison.EqualTo;
+}
+
+function getDefaultTypeRoots(currentDirectory: string, host: { directoryExists?: (directoryName: string) => boolean }): string[] | undefined {
+    const nmTypes = getNodeModulesTypeRoots(currentDirectory, host);
+    const pnpTypes = getPnpTypeRoots(currentDirectory);
+
+    if (nmTypes?.length) {
+        return [...nmTypes, ...pnpTypes];
+    }
+    else if (pnpTypes.length) {
+        return pnpTypes;
+    }
 }
 
 /**
@@ -2758,7 +2771,16 @@ function loadModuleFromNearestNodeModulesDirectoryWorker(extensions: Extensions,
     }
 
     function lookup(extensions: Extensions) {
-        return forEachAncestorDirectory(normalizeSlashes(directory), ancestorDirectory => {
+        const issuer = normalizeSlashes(directory);
+        if (getPnpApi(issuer)) {
+            const resolutionFromCache = tryFindNonRelativeModuleNameInCache(cache, moduleName, mode, issuer, redirectedReference, state);
+            if (resolutionFromCache) {
+                return resolutionFromCache;
+            }
+            return toSearchResult(loadModuleFromImmediateNodeModulesDirectoryPnP(extensions, moduleName, issuer, state, typesScopeOnly, cache, redirectedReference));
+        }
+
+        return forEachAncestorDirectory(issuer, ancestorDirectory => {
             if (getBaseFileName(ancestorDirectory) !== "node_modules") {
                 const resolutionFromCache = tryFindNonRelativeModuleNameInCache(cache, moduleName, mode, ancestorDirectory, redirectedReference, state);
                 if (resolutionFromCache) {
@@ -2797,11 +2819,34 @@ function loadModuleFromImmediateNodeModulesDirectory(extensions: Extensions, mod
     }
 }
 
+function loadModuleFromImmediateNodeModulesDirectoryPnP(extensions: Extensions, moduleName: string, directory: string, state: ModuleResolutionState, typesScopeOnly: boolean, cache: ModuleResolutionCache | undefined, redirectedReference: ResolvedProjectReference | undefined): Resolved | undefined {
+    const issuer = normalizeSlashes(directory);
+
+    if (!typesScopeOnly) {
+        const packageResult = tryLoadModuleUsingPnpResolution(extensions, moduleName, issuer, state, cache, redirectedReference);
+        if (packageResult) {
+            return packageResult;
+        }
+    }
+
+    if (extensions & Extensions.Declaration) {
+        return tryLoadModuleUsingPnpResolution(Extensions.Declaration, `@types/${mangleScopedPackageNameWithTrace(moduleName, state)}`, issuer, state, cache, redirectedReference);
+    }
+}
+
 function loadModuleFromSpecificNodeModulesDirectory(extensions: Extensions, moduleName: string, nodeModulesDirectory: string, nodeModulesDirectoryExists: boolean, state: ModuleResolutionState, cache: ModuleResolutionCache | undefined, redirectedReference: ResolvedProjectReference | undefined): Resolved | undefined {
     const candidate = normalizePath(combinePaths(nodeModulesDirectory, moduleName));
     const { packageName, rest } = parsePackageName(moduleName);
     const packageDirectory = combinePaths(nodeModulesDirectory, packageName);
+    return loadModuleFromSpecificNodeModulesDirectoryImpl(extensions, nodeModulesDirectoryExists, state, cache, redirectedReference, candidate, rest, packageDirectory);
+}
 
+function loadModuleFromPnpResolution(extensions: Extensions, packageDirectory: string, rest: string, state: ModuleResolutionState, cache: ModuleResolutionCache | undefined, redirectedReference: ResolvedProjectReference | undefined): Resolved | undefined {
+    const candidate = normalizePath(combinePaths(packageDirectory, rest));
+    return loadModuleFromSpecificNodeModulesDirectoryImpl(extensions, /*nodeModulesDirectoryExists*/ true, state, cache, redirectedReference, candidate, rest, packageDirectory);
+}
+
+function loadModuleFromSpecificNodeModulesDirectoryImpl(extensions: Extensions, nodeModulesDirectoryExists: boolean, state: ModuleResolutionState, cache: ModuleResolutionCache | undefined, redirectedReference: ResolvedProjectReference | undefined, candidate: string, rest: string, packageDirectory: string): Resolved | undefined {
     let rootPackageInfo: PackageJsonInfo | undefined;
     // First look for a nested package.json, as in `node_modules/foo/bar/package.json`.
     let packageInfo = getPackageJsonInfo(candidate, !nodeModulesDirectoryExists, state);
@@ -3098,4 +3143,23 @@ function traceIfEnabled(state: ModuleResolutionState, diagnostic: DiagnosticMess
     if (state.traceEnabled) {
         trace(state.host, diagnostic, ...args);
     }
+}
+
+function loadPnpPackageResolution(packageName: string, containingDirectory: string) {
+    try {
+        const resolution = getPnpApi(containingDirectory).resolveToUnqualified(packageName, `${containingDirectory}/`, { considerBuiltins: false });
+        return normalizeSlashes(resolution).replace(/\/$/, "");
+    }
+    catch {
+        // Nothing to do
+    }
+}
+
+function tryLoadModuleUsingPnpResolution(extensions: Extensions, moduleName: string, containingDirectory: string, state: ModuleResolutionState, cache: ModuleResolutionCache | undefined, redirectedReference: ResolvedProjectReference | undefined) {
+    const {packageName, rest} = parsePackageName(moduleName);
+
+    const packageResolution = loadPnpPackageResolution(packageName, containingDirectory);
+    return packageResolution
+        ? loadModuleFromPnpResolution(extensions, packageResolution, rest, state, cache, redirectedReference)
+        : undefined;
 }
