@@ -209,6 +209,11 @@ namespace ts.server {
                     }
                     try {
                         const args = [combinePaths(__dirname, "watchGuard.js"), path];
+                        if (typeof process.versions.pnp !== "undefined") {
+                            const {findPnpApi} = require("module");
+                            // eslint-disable-next-line no-null/no-null
+                            args.unshift("-r", findPnpApi(__filename).resolveRequest("pnpapi", /* issuer */ null));
+                        }
                         if (logger.hasLevel(LogLevel.verbose)) {
                             logger.info(`Starting ${process.execPath} with args:${stringifyIndented(args)}`);
                         }
@@ -505,6 +510,12 @@ namespace ts.server {
                         execArgv.push(`--${match[1]}=${currentPort + 1}`);
                         break;
                     }
+                }
+
+                if (typeof process.versions.pnp !== "undefined") {
+                    const {findPnpApi} = require("module");
+                            // eslint-disable-next-line no-null/no-null
+                            execArgv.unshift("-r", findPnpApi(__filename).resolveRequest("pnpapi", /* issuer */ null));
                 }
 
                 this.installer = childProcess.fork(combinePaths(__dirname, "typingsInstaller.js"), args, { execArgv });
