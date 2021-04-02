@@ -1,3 +1,4 @@
+import { getPnpApiPath } from "../compiler/pnp";
 import {
     addToSeen,
     arrayFrom,
@@ -990,6 +991,8 @@ export class ProjectService {
 
 
     private performanceEventHandler?: PerformanceEventHandler;
+    /** @internal */
+    private pnpWatcher?: FileWatcher;
 
     private pendingPluginEnablements?: Map<Project, Promise<BeginEnablePluginResult>[]>;
     private currentPluginEnablementPromise?: Promise<void>;
@@ -1056,6 +1059,8 @@ export class ProjectService {
                 watchDirectory: returnNoopFileWatcher,
             } :
             getWatchFactory(this.host, watchLogLevel, log, getDetailWatchInfo);
+
+        this.pnpWatcher = this.watchPnpFile();
     }
 
     toPath(fileName: string) {
@@ -3225,6 +3230,9 @@ export class ProjectService {
             if (args.watchOptions) {
                 this.hostConfiguration.watchOptions = convertWatchOptions(args.watchOptions)?.watchOptions;
                 this.logger.info(`Host watch options changed to ${JSON.stringify(this.hostConfiguration.watchOptions)}, it will be take effect for next watches.`);
+
+                this.pnpWatcher?.close();
+                this.watchPnpFile();
             }
         }
     }
@@ -4402,6 +4410,31 @@ export class ProjectService {
                         : undefined;
             }
         });
+    }
+
+    /** @internal */
+    private watchPnpFile() {
+        const pnpApiPath = getPnpApiPath(__filename);
+        if (!pnpApiPath) {
+            return;
+        }
+
+        return this.watchFactory.watchFile(
+            pnpApiPath,
+            () => {
+                this.forEachProject(project => {
+                    for (const info of project.getScriptInfos()) {
+                        project.resolutionCache.invalidateResolutionOfFile(info.path);
+                    }
+                    project.markAsDirty();
+                    updateProjectIfDirty(project);
+                });
+                this.delayEnsureProjectForOpenFiles();
+            },
+            PollingInterval.Low,
+            this.hostConfiguration.watchOptions,
+            WatchType.ConfigFile,
+        );
     }
 
     /** @internal */

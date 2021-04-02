@@ -369,7 +369,9 @@ export enum ConfigFileProgramReloadLevel {
     /** Update the file name list from the disk */
     Partial,
     /** Reload completely by re-reading contents of config file from disk and updating program */
-    Full
+    Full,
+    /** Reload the resolutions */
+    Resolutions,
 }
 
 /** @internal */
