@@ -7602,6 +7602,14 @@ namespace ts {
         readonly packageRootIndex: number;
         readonly fileNameIndex: number;
     }
+
+    export interface PackagePathParts {
+        readonly topLevelNodeModulesIndex: undefined;
+        readonly topLevelPackageNameIndex: undefined;
+        readonly packageRootIndex: number;
+        readonly fileNameIndex: number;
+    }
+
     export function getNodeModulePathParts(fullPath: string): NodeModulePathParts | undefined {
         // If fullPath can't be valid module file within node_modules, returns undefined.
         // Example of expected pattern: /base/path/node_modules/[@scope/otherpackage/@otherscope/node_modules/]package/[subdirectory/]file.js

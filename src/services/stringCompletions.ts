@@ -586,7 +586,43 @@ namespace ts.Completions.StringCompletions {
                         getCompletionEntriesForDirectoryFragment(fragment, nodeModules, extensionOptions, host, /*exclude*/ undefined, result);
                     }
                 };
-                if (fragmentDirectory && isEmitModuleResolutionRespectingExportMaps(compilerOptions)) {
+
+                const checkExports = (packageFile:string, fragmentSubpath:string) => {
+                    const packageJson = readJson(packageFile, host as { readFile: (filename: string) => string | undefined });
+                    const exports = (packageJson as any).exports;
+                    if (exports) {
+                        if (typeof exports !== "object" || exports === null) { // eslint-disable-line no-null/no-null
+                            return true; // null exports or entrypoint only, no sub-modules available
+                        }
+                        const keys = getOwnKeys(exports);
+                        const processedKeys = mapDefined(keys, k => {
+                            if (k === ".") return undefined;
+                            if (!startsWith(k, "./")) return undefined;
+                            const subpath = k.substring(2);
+                            if (!startsWith(subpath, fragmentSubpath)) return undefined;
+                            // subpath is a valid export (barring conditions, which we don't currently check here)
+                            if (!stringContains(subpath, "*")) {
+                                return subpath;
+                            }
+                            // pattern export - only return everything up to the `*`, so the user can autocomplete, then
+                            // keep filling in the pattern (we could speculatively return a list of options by hitting disk,
+                            // but conditions will make that somewhat awkward, as each condition may have a different set of possible
+                            // options for the `*`.
+                            return subpath.slice(0, subpath.indexOf("*"));
+                        });
+                        forEach(processedKeys, k => {
+                            if (k) {
+                                result.push(nameAndKind(k, ScriptElementKind.externalModuleName, /*extension*/ undefined));
+                            }
+                        });
+                        return true;
+                    }
+                    return false;
+                }
+
+                const shouldCheckExports = fragmentDirectory && isEmitModuleResolutionRespectingExportMaps(compilerOptions);
+
+                if (shouldCheckExports) {
                     const nodeModulesDirectoryLookup = ancestorLookup;
                     ancestorLookup = ancestor => {
                         const components = getPathComponents(fragment);
@@ -604,41 +640,48 @@ namespace ts.Completions.StringCompletions {
                         }
                         const packageFile = combinePaths(ancestor, "node_modules", packagePath, "package.json");
                         if (tryFileExists(host, packageFile)) {
-                            const packageJson = readJson(packageFile, host as { readFile: (filename: string) => string | undefined });
-                            const exports = (packageJson as any).exports;
-                            if (exports) {
-                                if (typeof exports !== "object" || exports === null) { // eslint-disable-line no-null/no-null
-                                    return; // null exports or entrypoint only, no sub-modules available
-                                }
-                                const keys = getOwnKeys(exports);
-                                const fragmentSubpath = components.join("/");
-                                const processedKeys = mapDefined(keys, k => {
-                                    if (k === ".") return undefined;
-                                    if (!startsWith(k, "./")) return undefined;
-                                    const subpath = k.substring(2);
-                                    if (!startsWith(subpath, fragmentSubpath)) return undefined;
-                                    // subpath is a valid export (barring conditions, which we don't currently check here)
-                                    if (!stringContains(subpath, "*")) {
-                                        return subpath;
-                                    }
-                                    // pattern export - only return everything up to the `*`, so the user can autocomplete, then
-                                    // keep filling in the pattern (we could speculatively return a list of options by hitting disk,
-                                    // but conditions will make that somewhat awkward, as each condition may have a different set of possible
-                                    // options for the `*`.
-                                    return subpath.slice(0, subpath.indexOf("*"));
-                                });
-                                forEach(processedKeys, k => {
-                                    if (k) {
-                                        result.push(nameAndKind(k, ScriptElementKind.externalModuleName, /*extension*/ undefined));
-                                    }
-                                });
+                            if (checkExports(packageFile, components.join("/"))) {
                                 return;
                             }
                         }
                         return nodeModulesDirectoryLookup(ancestor);
                     };
                 }
-                forEachAncestorDirectory(scriptPath, ancestorLookup);
+
+                const pnpapi = require("module").findPnpApi?.(scriptPath);
+
+                if (pnpapi) {
+                    // Splits a require request into its components, or return null if the request is a file path
+                    const pathRegExp = /^(?![a-zA-Z]:[\\/]|\\\\|\.{0,2}(?:\/|$))((?:@[^/]+\/)?[^/]+)\/*(.*|)$/;
+                    const dependencyNameMatch = fragment.match(pathRegExp);
+                    if (dependencyNameMatch) {
+                        const [, dependencyName, subPath] = dependencyNameMatch;
+                        let unqualified;
+                        try {
+                            unqualified = pnpapi.resolveToUnqualified(dependencyName, scriptPath, { considerBuiltins: false });
+                        }
+ catch {
+                            // It's fine if the resolution fails
+                        }
+                        if (unqualified) {
+                            const normalizedPath = normalizePath(unqualified);
+                            let shouldGetCompletions = true;
+
+                            if (shouldCheckExports) {
+                                const packageFile = combinePaths(normalizedPath, "package.json");
+                                if (tryFileExists(host, packageFile) && checkExports(packageFile, subPath)) {
+                                    shouldGetCompletions = false;
+                                }
+                            }
+
+                            if (shouldGetCompletions) {
+                                getCompletionEntriesForDirectoryFragment(subPath, normalizedPath, extensionOptions, host, /*exclude*/ undefined, result);
+                            }
+                        }
+                    }
+                } else {
+                    forEachAncestorDirectory(scriptPath, ancestorLookup);
+                }
             }
         }
 
@@ -770,10 +813,17 @@ namespace ts.Completions.StringCompletions {
             getCompletionEntriesFromDirectories(root);
         }
 
-        // Also get all @types typings installed in visible node_modules directories
-        for (const packageJson of findPackageJsons(scriptPath, host)) {
-            const typesDir = combinePaths(getDirectoryPath(packageJson), "node_modules/@types");
-            getCompletionEntriesFromDirectories(typesDir);
+        if (require("module").findPnpApi?.(scriptPath)) {
+            for (const root of getPnpTypeRoots(scriptPath)) {
+                getCompletionEntriesFromDirectories(root);
+            }
+        }
+ else {
+            // Also get all @types typings installed in visible node_modules directories
+            for (const packageJson of findPackageJsons(scriptPath, host)) {
+                const typesDir = combinePaths(getDirectoryPath(packageJson), "node_modules/@types");
+                getCompletionEntriesFromDirectories(typesDir);
+            }
         }
 
         return result;
