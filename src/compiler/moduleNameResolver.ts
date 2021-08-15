@@ -1785,7 +1785,7 @@ namespace ts {
     function loadPnpPackageResolution(packageName: string, containingDirectory: string) {
         try {
             const resolution = getPnpApi(containingDirectory).resolveToUnqualified(packageName, `${containingDirectory}/`, { considerBuiltins: false });
-            return normalizeSlashes(resolution);
+            return normalizeSlashes(resolution).replace(/\/$/, '');
         }
         catch {
             // Nothing to do
