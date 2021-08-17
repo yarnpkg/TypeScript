@@ -2228,7 +2228,9 @@ namespace ts.server {
                 const getPnpPath = (path: string) => {
                     try {
                         const targetLocator = pnpApi.findPackageLocator(`${path}/`);
-                        return pnpApi.resolveToUnqualified(targetLocator.name, `${basePath}/`);
+                        const {packageLocation} = pnpApi.getPackageInformation(targetLocator);
+                        const request = combinePaths(targetLocator.name, getRelativePathFromDirectory(packageLocation, path, false));
+                        return pnpApi.resolveToUnqualified(request, `${basePath}/`);
                     } catch {
                         // something went wrong with the resolution, try not to fail
                         return path;
