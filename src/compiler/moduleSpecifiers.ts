@@ -480,7 +480,8 @@ namespace ts.moduleSpecifiers {
 
         let packageName: string | undefined;
         if (!parts && typeof process.versions.pnp !== "undefined") {
-            const pnpApi = require("pnpapi");
+            const {findPnpApi} = require("module");
+            const pnpApi = findPnpApi(path);
             const locator = pnpApi.findPackageLocator(path);
             // eslint-disable-next-line no-null/no-null
             if (locator !== null) {

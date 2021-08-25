@@ -2222,11 +2222,12 @@ namespace ts.server {
                 // the PnP API. This way users don't have to know the virtual paths,
                 // but we still support them just fine even through references.
 
-                const pnpApi = require("pnpapi");
                 const basePath = this.getCurrentDirectory();
+                const {findPnpApi} = require("module");
 
                 const getPnpPath = (path: string) => {
                     try {
+                        const pnpApi = findPnpApi(`${path}/`);
                         const targetLocator = pnpApi.findPackageLocator(`${path}/`);
                         const {packageLocation} = pnpApi.getPackageInformation(targetLocator);
                         const request = combinePaths(targetLocator.name, getRelativePathFromDirectory(packageLocation, path, false));
