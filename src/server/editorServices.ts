@@ -4121,7 +4121,8 @@ namespace ts.server {
             if (typeof process.versions.pnp === "undefined") {
                 return;
             }
-            const pnpFileName = require.resolve("pnpapi");
+            const {findPnpApi} = require("module");
+            const pnpFileName = findPnpApi(__filename).resolveRequest('pnpapi', null);
             return this.watchFactory.watchFile(
                 pnpFileName,
                 () => {
