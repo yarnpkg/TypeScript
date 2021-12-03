@@ -652,7 +652,7 @@ namespace ts.moduleSpecifiers {
             const pnpApi = findPnpApi(path);
             const locator = pnpApi?.findPackageLocator(path);
             // eslint-disable-next-line no-null/no-null
-            if (locator != null) {
+            if (locator !== null && locator !== undefined) {
                 const sourceLocator = pnpApi.findPackageLocator(`${sourceDirectory}/`);
                 // Don't use the package name when the imported file is inside
                 // the source directory (prefer a relative path instead)
