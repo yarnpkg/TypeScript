@@ -4240,9 +4240,11 @@ namespace ts.server {
             if (typeof process.versions.pnp === "undefined") {
                 return;
             }
-            const {findPnpApi} = require("module");
-            // eslint-disable-next-line no-null/no-null
-            const pnpFileName = findPnpApi(__filename).resolveRequest("pnpapi", /*issuer*/ null);
+            const pnpApi = require("module").findPnpApi(__filename);
+            if (!pnpApi) {
+                return;
+            }
+            const pnpFileName = pnpApi.resolveRequest("pnpapi", /*issuer*/ null);
             return this.watchFactory.watchFile(
                 pnpFileName,
                 () => {
