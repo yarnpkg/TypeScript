@@ -732,7 +732,7 @@ namespace ts.Completions.StringCompletions {
                     };
                 }
 
-                const pnpapi = require("module").findPnpApi?.(scriptPath);
+                const pnpapi = typeof process.versions.pnp === "undefined" ? undefined : require("module").findPnpApi?.(scriptPath);
 
                 if (pnpapi) {
                     // Splits a require request into its components, or return null if the request is a file path
@@ -939,7 +939,7 @@ namespace ts.Completions.StringCompletions {
             getCompletionEntriesFromDirectories(root);
         }
 
-        if (require("module").findPnpApi?.(scriptPath)) {
+        if (typeof process.versions.pnp !== "undefined" && require("module").findPnpApi?.(scriptPath)) {
             for (const root of getPnpTypeRoots(scriptPath)) {
                 getCompletionEntriesFromDirectories(root);
             }

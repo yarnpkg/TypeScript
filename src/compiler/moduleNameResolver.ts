@@ -2755,6 +2755,9 @@ namespace ts {
      * @internal
      */
     function getPnpApi(path: string) {
+        if (typeof process.versions.pnp === "undefined") {
+            return undefined;
+        }
         const {findPnpApi} = require("module");
         if (findPnpApi === undefined) {
             return undefined;
