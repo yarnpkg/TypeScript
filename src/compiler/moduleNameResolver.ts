@@ -743,6 +743,18 @@ export function resolvePackageNameToPackageJson(
 ): PackageJsonInfo | undefined {
     const moduleResolutionState = getTemporaryModuleResolutionState(cache?.getPackageJsonInfoCache(), host, options);
 
+    const pnpapi = getPnpApi(containingDirectory);
+    if (pnpapi) {
+        try {
+            const resolution = pnpapi.resolveToUnqualified(packageName, `${containingDirectory}/`, { considerBuiltins: false });
+            const candidate = normalizeSlashes(resolution).replace(/\/$/, "");
+            return getPackageJsonInfo(candidate, /*onlyRecordFailures*/ false, moduleResolutionState);
+        }
+        catch {
+            return;
+        }
+    }
+
     return forEachAncestorDirectory(containingDirectory, ancestorDirectory => {
         if (getBaseFileName(ancestorDirectory) !== "node_modules") {
             const nodeModulesFolder = combinePaths(ancestorDirectory, "node_modules");
