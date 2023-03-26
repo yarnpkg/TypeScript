@@ -60,5 +60,18 @@ export function isImportablePathPnp(fromPath: string, toPath: string): boolean {
     const fromInfo = pnpApi.getPackageInformation(fromLocator);
     const toReference = fromInfo.packageDependencies.get(toLocator.name);
 
-    return toReference === toLocator.reference;
+    if (toReference) {
+        return toReference === toLocator.reference;
+    }
+
+    // Aliased dependencies
+    for (const reference of fromInfo.packageDependencies.values()) {
+        if (Array.isArray(reference)) {
+            if (reference[0] === toLocator.name && reference[1] === toLocator.reference) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }

@@ -886,26 +886,45 @@ function tryGetModuleNameAsNodeModule({ path, isRedirect }: ModulePath, { getCan
     let parts: NodeModulePathParts | PackagePathParts | undefined = getNodeModulePathParts(path);
 
     let packageName: string | undefined;
-    if (!parts) {
-        const pnpApi = getPnpApi(path);
-        const locator = pnpApi?.findPackageLocator(path);
-        // eslint-disable-next-line no-null/no-null
-        if (locator !== null && locator !== undefined) {
-            const sourceLocator = pnpApi.findPackageLocator(`${sourceDirectory}/`);
-            // Don't use the package name when the imported file is inside
-            // the source directory (prefer a relative path instead)
-            if (locator === sourceLocator) {
-                return undefined;
+
+    const pnpApi = getPnpApi(path);
+    if (pnpApi) {
+        const fromLocator = pnpApi.findPackageLocator(importingSourceFile.fileName);
+        const toLocator = pnpApi.findPackageLocator(path);
+
+        // Don't use the package name when the imported file is inside
+        // the source directory (prefer a relative path instead)
+        if (fromLocator === toLocator) {
+            return undefined;
+        }
+
+        if (fromLocator && toLocator) {
+            const fromInfo = pnpApi.getPackageInformation(fromLocator);
+            if (toLocator.reference === fromInfo.packageDependencies.get(toLocator.name)) {
+                packageName = toLocator.name;
             }
-            const information = pnpApi.getPackageInformation(locator);
-            packageName = locator.name;
-            parts = {
-                topLevelNodeModulesIndex: undefined,
-                topLevelPackageNameIndex: undefined,
-                // The last character from packageLocation is the trailing "/", we want to point to it
-                packageRootIndex: information.packageLocation.length - 1,
-                fileNameIndex: path.lastIndexOf(`/`),
-            };
+            else {
+                // Aliased dependencies
+                for (const [name, reference] of fromInfo.packageDependencies) {
+                    if (Array.isArray(reference)) {
+                        if (reference[0] === toLocator.name && reference[1] === toLocator.reference) {
+                            packageName = name;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!parts) {
+                const toInfo = pnpApi.getPackageInformation(toLocator);
+                parts = {
+                    topLevelNodeModulesIndex: undefined,
+                    topLevelPackageNameIndex: undefined,
+                    // The last character from packageLocation is the trailing "/", we want to point to it
+                    packageRootIndex: toInfo.packageLocation.length - 1,
+                    fileNameIndex: path.lastIndexOf(`/`),
+                };
+            }
         }
     }
 
