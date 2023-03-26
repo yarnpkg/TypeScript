@@ -622,7 +622,17 @@ function getAllModulePathsWorker(importingFileName: Path, importedFileName: stri
         host,
         /*preferSymlinks*/ true,
         (path, isRedirect) => {
-            const isInNodeModules = pathContainsNodeModules(path);
+            let isInNodeModules = pathContainsNodeModules(path);
+
+            const pnpapi = getPnpApi(path);
+            if (!isInNodeModules && pnpapi) {
+                const fromLocator = pnpapi.findPackageLocator(importingFileName);
+                const toLocator = pnpapi.findPackageLocator(path);
+                if (fromLocator && toLocator && fromLocator !== toLocator) {
+                    isInNodeModules = true;
+                }
+            }
+
             allFileNames.set(path, { path: getCanonicalFileName(path), isRedirect, isInNodeModules });
             importedFileFromNodeModules = importedFileFromNodeModules || isInNodeModules;
             // don't return value, so we collect everything
@@ -885,7 +895,7 @@ function tryGetModuleNameAsNodeModule({ path, isRedirect }: ModulePath, { getCan
     }
     let parts: NodeModulePathParts | PackagePathParts | undefined = getNodeModulePathParts(path);
 
-    let packageName: string | undefined;
+    let pnpPackageName: string | undefined;
 
     const pnpApi = getPnpApi(path);
     if (pnpApi) {
@@ -901,14 +911,14 @@ function tryGetModuleNameAsNodeModule({ path, isRedirect }: ModulePath, { getCan
         if (fromLocator && toLocator) {
             const fromInfo = pnpApi.getPackageInformation(fromLocator);
             if (toLocator.reference === fromInfo.packageDependencies.get(toLocator.name)) {
-                packageName = toLocator.name;
+                pnpPackageName = toLocator.name;
             }
             else {
                 // Aliased dependencies
                 for (const [name, reference] of fromInfo.packageDependencies) {
                     if (Array.isArray(reference)) {
                         if (reference[0] === toLocator.name && reference[1] === toLocator.reference) {
-                            packageName = name;
+                            pnpPackageName = name;
                             break;
                         }
                     }
@@ -985,8 +995,8 @@ function tryGetModuleNameAsNodeModule({ path, isRedirect }: ModulePath, { getCan
     }
 
     // If the module was found in @types, get the actual Node package name
-    const nodeModulesDirectoryName = typeof packageName !== "undefined"
-        ? packageName + moduleSpecifier.substring(parts.packageRootIndex)
+    const nodeModulesDirectoryName = typeof pnpPackageName !== "undefined"
+        ? pnpPackageName + moduleSpecifier.substring(parts.packageRootIndex)
         : moduleSpecifier.substring(parts.topLevelPackageNameIndex! + 1);
 
     const packageNameFromPath = getPackageNameFromTypesPackageName(nodeModulesDirectoryName);
@@ -1007,7 +1017,7 @@ function tryGetModuleNameAsNodeModule({ path, isRedirect }: ModulePath, { getCan
                 // name in the package.json content via url/filepath dependency specifiers. We need to
                 // use the actual directory name, so don't look at `packageJsonContent.name` here.
                 const nodeModulesDirectoryName = packageRootPath.substring(parts!.topLevelPackageNameIndex! + 1);
-                const packageName = getPackageNameFromTypesPackageName(nodeModulesDirectoryName);
+                const packageName = getPackageNameFromTypesPackageName(pnpPackageName ? pnpPackageName : nodeModulesDirectoryName);
                 const conditions = getConditions(options, importMode === ModuleKind.ESNext);
                 const fromExports = packageJsonContent.exports
                     ? tryGetModuleNameFromExports(options, path, packageRootPath, packageName, packageJsonContent.exports, conditions)

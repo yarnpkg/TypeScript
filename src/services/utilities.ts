@@ -1,3 +1,4 @@
+import { getPnpApi } from "../compiler/pnp";
 import {
     __String,
     addEmitFlags,
@@ -3793,9 +3794,18 @@ export function createPackageJsonImportFilter(fromFile: SourceFile, preferences:
     }
 
     function getNodeModulesPackageNameFromFileName(importedFileName: string, moduleSpecifierResolutionHost: ModuleSpecifierResolutionHost): string | undefined {
-        if (!stringContains(importedFileName, "node_modules")) {
-            return undefined;
+        const pnpapi = getPnpApi(importedFileName);
+        if (pnpapi) {
+          const fromLocator = pnpapi.findPackageLocator(fromFile.fileName);
+          const toLocator = pnpapi.findPackageLocator(importedFileName);
+          if (!(fromLocator && toLocator)) {
+            return void 0;
+          }
         }
+        else if (!stringContains(importedFileName, "node_modules")) {
+          return void 0;
+        }
+
         const specifier = moduleSpecifiers.getNodeModulesPackageName(
             host.getCompilationSettings(),
             fromFile,
