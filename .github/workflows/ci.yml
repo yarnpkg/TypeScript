@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - release-*
+      - '*/pnp-*'
   pull_request:
     branches:
       - main
