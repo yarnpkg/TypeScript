@@ -1,3 +1,4 @@
+import { getPnpApiPath } from "../compiler/pnp";
 import {
     CharacterCodes,
     combinePaths,
@@ -287,6 +288,10 @@ export function initializeNodeSystem(): StartInput {
                 }
                 try {
                     const args = [combinePaths(libDirectory, "watchGuard.js"), path];
+                    const pnpApiPath = getPnpApiPath(__filename);
+                    if (pnpApiPath) {
+                        args.unshift("-r", pnpApiPath);
+                    }
                     if (logger.hasLevel(ts.server.LogLevel.verbose)) {
                         logger.info(`Starting ${process.execPath} with args:${ts.server.stringifyIndented(args)}`);
                     }
@@ -542,6 +547,11 @@ function startNodeSession(options: StartSessionOptions, logger: ts.server.Logger
                     execArgv.push(`--${match[1]}=${currentPort + 1}`);
                     break;
                 }
+            }
+
+            const pnpApiPath = getPnpApiPath(__filename);
+            if (pnpApiPath) {
+                execArgv.unshift("-r", pnpApiPath);
             }
 
             const typingsInstaller = combinePaths(getDirectoryPath(sys.getExecutingFilePath()), "typingsInstaller.js");
