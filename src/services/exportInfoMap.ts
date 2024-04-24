@@ -1,7 +1,5 @@
-import {
-    getPnpApi,
-    isImportablePathPnp,
-} from "../compiler/pnp";
+import { isImportablePathPnp } from "../compiler/pnp";
+import { getPnpApi } from "../compiler/pnpapi";
 import {
     __String,
     addToSeen,

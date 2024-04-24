@@ -1,4 +1,4 @@
-import { getPnpApi } from "../compiler/pnp";
+import { getPnpApi } from "../compiler/pnpapi";
 import {
     __String,
     addEmitFlags,

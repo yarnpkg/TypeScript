@@ -1,4 +1,4 @@
-import { getPnpApi } from "../compiler/pnp";
+import { getPnpApi } from "../compiler/pnpapi";
 import * as ts from "./_namespaces/ts";
 import {
     addRange,

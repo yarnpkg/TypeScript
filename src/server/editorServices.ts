@@ -1,4 +1,4 @@
-import { getPnpApiPath } from "../compiler/pnp";
+import { getPnpApiPath } from "../compiler/pnpapi";
 import {
     addToSeen,
     arrayFrom,

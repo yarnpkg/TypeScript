@@ -95,7 +95,7 @@ import {
     WatchTypeRegistry,
     WildcardDirectoryWatcher,
 } from "./_namespaces/ts";
-import { getPnpApiPath } from "./pnp";
+import { getPnpApiPath } from "./pnpapi";
 
 export interface ReadBuildProgramHost {
     useCaseSensitiveFileNames(): boolean;
