@@ -1,6 +1,6 @@
 import {
     getPnpApiPath,
-} from "../compiler/pnp";
+} from "../compiler/pnpapi";
 import {
     addToSeen,
     arrayFrom,

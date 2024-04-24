@@ -1,6 +1,6 @@
 import {
     getPnpApi,
-} from "../compiler/pnp";
+} from "../compiler/pnpapi";
 import * as ts from "./_namespaces/ts";
 import {
     addRange,

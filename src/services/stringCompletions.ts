@@ -2,9 +2,11 @@ import {
     getModuleSpecifierPreferences,
 } from "../compiler/moduleSpecifiers";
 import {
-    getPnpApi,
-    getPnpTypeRoots,
+    getPnpTypeRoots
 } from "../compiler/pnp";
+import {
+    getPnpApi
+} from "../compiler/pnpapi";
 import {
     addToSeen,
     altDirectorySeparator,

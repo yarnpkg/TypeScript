@@ -97,7 +97,7 @@ import {
 } from "./_namespaces/ts";
 import {
     getPnpApiPath,
-} from "./pnp";
+} from "./pnpapi";
 
 export interface ReadBuildProgramHost {
     useCaseSensitiveFileNames(): boolean;
