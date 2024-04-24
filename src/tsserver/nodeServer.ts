@@ -1,6 +1,6 @@
 import {
     getPnpApiPath,
-} from "../compiler/pnp";
+} from "../compiler/pnpapi";
 import * as protocol from "../server/protocol";
 import * as ts from "./_namespaces/ts";
 import {

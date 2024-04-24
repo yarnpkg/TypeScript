@@ -1,6 +1,6 @@
 import {
     getPnpApi,
-} from "../compiler/pnp";
+} from "../compiler/pnpapi";
 import {
     __String,
     addEmitFlags,

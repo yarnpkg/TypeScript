@@ -120,7 +120,7 @@ import {
 } from "./_namespaces/ts";
 import {
     getPnpApi,
-} from "./pnp";
+} from "./pnpapi";
 
 // Used by importFixes, getEditsForFileRename, and declaration emit to synthesize import module specifiers.
 
