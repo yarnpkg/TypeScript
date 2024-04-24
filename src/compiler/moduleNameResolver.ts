@@ -109,10 +109,8 @@ import {
     versionMajorMinor,
     VersionRange,
 } from "./_namespaces/ts.js";
-import {
-    getPnpApi,
-    getPnpTypeRoots,
-} from "./pnp.js";
+import { getPnpTypeRoots } from "./pnp.js";
+import { getPnpApi } from "./pnpapi.js";
 
 /** @internal */
 export function trace(host: ModuleResolutionHost, message: DiagnosticMessage, ...args: any[]): void {

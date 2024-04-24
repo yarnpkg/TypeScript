@@ -1,4 +1,4 @@
-import { getPnpApi } from "../compiler/pnp.js";
+import { getPnpApi } from "../compiler/pnpapi.js";
 import * as ts from "./_namespaces/ts.js";
 import {
     addRange,

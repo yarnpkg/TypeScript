@@ -1,8 +1,6 @@
 import { getModuleSpecifierPreferences } from "../compiler/moduleSpecifiers.js";
-import {
-    getPnpApi,
-    getPnpTypeRoots,
-} from "../compiler/pnp.js";
+import { getPnpTypeRoots } from "../compiler/pnp.js";
+import { getPnpApi } from "../compiler/pnpapi.js";
 import {
     CompletionKind,
     createCompletionDetails,

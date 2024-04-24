@@ -1,4 +1,4 @@
-import { getPnpApi } from "../compiler/pnp.js";
+import { getPnpApi } from "../compiler/pnpapi.js";
 import {
     __String,
     addEmitFlags,

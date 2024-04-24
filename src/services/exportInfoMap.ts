@@ -1,7 +1,5 @@
-import {
-    getPnpApi,
-    isImportablePathPnp,
-} from "../compiler/pnp.js";
+import { isImportablePathPnp } from "../compiler/pnp.js";
+import { getPnpApi } from "../compiler/pnpapi.js";
 import {
     __String,
     addToSeen,

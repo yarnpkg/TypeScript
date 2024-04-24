@@ -2,22 +2,7 @@ import {
     getDirectoryPath,
     resolvePath,
 } from "./path.js";
-
-export function getPnpApi(path: string) {
-    if (typeof process.versions.pnp === "undefined") {
-        return;
-    }
-
-    const { findPnpApi } = require("module");
-    if (findPnpApi) {
-        return findPnpApi(`${path}/`);
-    }
-}
-
-export function getPnpApiPath(path: string): string | undefined {
-    // eslint-disable-next-line no-restricted-syntax
-    return getPnpApi(path)?.resolveRequest("pnpapi", /*issuer*/ null);
-}
+import { getPnpApi } from "./pnpapi.js";
 
 export function getPnpTypeRoots(currentDirectory: string) {
     const pnpApi = getPnpApi(currentDirectory);

@@ -1,4 +1,4 @@
-import { getPnpApiPath } from "../compiler/pnp.js";
+import { getPnpApiPath } from "../compiler/pnpapi.js";
 import {
     CharacterCodes,
     combinePaths,
