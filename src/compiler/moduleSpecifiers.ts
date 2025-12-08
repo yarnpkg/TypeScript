@@ -120,6 +120,7 @@ import {
 } from "./_namespaces/ts";
 import {
     getPnpApi,
+    isPnpEnabled,
 } from "./pnpapi";
 
 // Used by importFixes, getEditsForFileRename, and declaration emit to synthesize import module specifiers.
@@ -1113,7 +1114,7 @@ function tryGetModuleNameAsNodeModule({ path, isRedirect }: ModulePath, { getCan
 
     // If PnP is enabled the node_modules entries we'll get will always be relevant even if they
     // are located in a weird path apparently outside of the source directory
-    if (typeof process.versions.pnp === "undefined") {
+    if (!isPnpEnabled()) {
         const globalTypingsCacheLocation = host.getGlobalTypingsCacheLocation && host.getGlobalTypingsCacheLocation();
         // Get a path that's relative to node_modules or the importing file's path
         // if node_modules folder is in this folder or any of its parent folders, no need to keep it.
