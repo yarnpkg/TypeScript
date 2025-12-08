@@ -1,8 +1,12 @@
 // To preserve the effects of https://github.com/microsoft/TypeScript/pull/55326
 // this file needs to avoid importing large graphs.
 
+export function isPnpEnabled(): boolean {
+    return typeof process !== "undefined" && typeof process?.versions?.pnp !== "undefined";
+}
+
 export function getPnpApi(path: string): any {
-    if (typeof process.versions.pnp === "undefined") {
+    if (!isPnpEnabled()) {
         return;
     }
 

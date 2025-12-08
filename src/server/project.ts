@@ -1,5 +1,5 @@
 // eslint-disable-next-line local/no-direct-import
-import { getPnpApi } from "../compiler/pnpapi.js";
+import { getPnpApi, isPnpEnabled } from "../compiler/pnpapi.js";
 import * as ts from "./_namespaces/ts.js";
 import {
     addRange,
@@ -3036,7 +3036,7 @@ export class ConfiguredProject extends Project {
     }
 
     updateReferences(refs: readonly ProjectReference[] | undefined): void {
-        if (typeof process.versions.pnp !== `undefined`) {
+        if (isPnpEnabled()) {
             // With Plug'n'Play, dependencies that list peer dependencies
             // are "virtualized": they are resolved to a unique (virtual)
             // path that the underlying filesystem layer then resolve back
