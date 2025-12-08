@@ -1,4 +1,4 @@
-import { getPnpApi } from "../compiler/pnpapi";
+import { getPnpApi, isPnpEnabled } from "../compiler/pnpapi";
 import * as ts from "./_namespaces/ts";
 import {
     addRange,
@@ -2890,7 +2890,7 @@ export class ConfiguredProject extends Project {
     }
 
     updateReferences(refs: readonly ProjectReference[] | undefined) {
-        if (typeof process.versions.pnp !== `undefined`) {
+        if (isPnpEnabled()) {
             // With Plug'n'Play, dependencies that list peer dependencies
             // are "virtualized": they are resolved to a unique (virtual)
             // path that the underlying filesystem layer then resolve back
