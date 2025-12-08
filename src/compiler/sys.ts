@@ -46,6 +46,9 @@ import {
     WatchOptions,
     writeFileEnsuringDirectories,
 } from "./_namespaces/ts";
+import {
+    isPnpEnabled
+} from "./pnpapi";
 
 declare function setTimeout(handler: (...args: any[]) => void, timeout: number): any;
 declare function clearTimeout(handle: any): void;
@@ -1747,7 +1750,7 @@ export let sys: System = (() => {
 
         function isFileSystemCaseSensitive(): boolean {
             // The PnP runtime is always case-sensitive
-            if (typeof process.versions.pnp !== `undefined`) {
+            if (isPnpEnabled()) {
                 return true;
             }
             // win32\win64 are case insensitive platforms
