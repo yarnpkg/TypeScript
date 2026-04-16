@@ -39,13 +39,16 @@ export function createModuleSpecifierCache(host: ModuleSpecifierResolutionCacheH
                 for (const p of modulePaths) {
                     if (p.isInNodeModules) {
                         // No trailing slash
-                        const nodeModulesPath = p.path.substring(0, p.path.indexOf(nodeModulesPathPart) + nodeModulesPathPart.length - 1);
-                        const key = host.toPath(nodeModulesPath);
-                        if (!containedNodeModulesWatchers?.has(key)) {
-                            (containedNodeModulesWatchers ||= new Map()).set(
-                                key,
-                                host.watchNodeModulesForPackageJsonChanges(nodeModulesPath),
-                            );
+                        const nodeModulesIndex = p.path.indexOf(nodeModulesPathPart);
+                        if (nodeModulesIndex !== -1) {
+                            const nodeModulesPath = p.path.substring(0, nodeModulesIndex + nodeModulesPathPart.length - 1);
+                            const key = host.toPath(nodeModulesPath);
+                            if (!containedNodeModulesWatchers?.has(key)) {
+                                (containedNodeModulesWatchers ||= new Map()).set(
+                                    key,
+                                    host.watchNodeModulesForPackageJsonChanges(nodeModulesPath),
+                                );
+                            }
                         }
                     }
                 }
