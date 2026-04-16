@@ -2444,7 +2444,9 @@ function readPackageJsonPeerDependencies(packageJsonInfo: PackageJsonInfo, state
     if (peerDependencies === undefined) return undefined;
     if (state.traceEnabled) trace(state.host, Diagnostics.package_json_has_a_peerDependencies_field);
     const packageDirectory = realPath(packageJsonInfo.packageDirectory, state.host, state.traceEnabled);
-    const nodeModules = packageDirectory.substring(0, packageDirectory.lastIndexOf("node_modules") + "node_modules".length) + directorySeparator;
+    const nodeModulesIndex = packageDirectory.lastIndexOf("node_modules");
+    if (nodeModulesIndex === -1) return undefined;
+    const nodeModules = packageDirectory.substring(0, nodeModulesIndex + "node_modules".length) + directorySeparator;
     let result = "";
     for (const key in peerDependencies) {
         if (hasProperty(peerDependencies, key)) {
